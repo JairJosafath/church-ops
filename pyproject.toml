@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Integrations worker"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "websockets>=17.4",
+]
 
 [project.scripts]
 integrations-worker = "app.worker:main"
