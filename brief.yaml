@@ -1,0 +1,42 @@
+# church-ops as a Brief: the same product as model/, in a church's own words,
+# so the planner Agent can be shown producing the model. Apply it alone,
+# after model/project.yaml and model/domain.yaml, so the planner plans from
+# the idea and the catalog, and names the church-ops Domain on the system it
+# makes. If its round fails, model/ is the fallback (CLAUDE.md). Applied after
+# model/, the planner keeps that model instead and files the Containers'
+# first issues, as the webshop does. Needs church-ops in the chart's
+# gitea.projects (the catalog, the Agents and GitProvider gitea) and Secret
+# claude-credentials.
+apiVersion: theos.factory.io/v1beta1
+kind: Brief
+metadata:
+  name: church-ops
+  namespace: church-ops
+spec:
+  idea: >-
+    Church Ops is how our church organizes itself week to week, in the
+    Netherlands. The worship leader plans each Sunday service: its order of
+    songs, readings, prayers, the sermon and announcements, with a length for
+    each, and for every song the arrangement we play and the key, so the band
+    sees its charts in the key of the day. They also plan the rehearsals. The
+    pastor adds the sermon and readings to the order and keeps pastoral notes
+    and prayer requests that only they and the people the person would expect
+    may read. Volunteers serve in teams (band, sound, stream, welcome, kids'
+    church). A team leader asks them to serve on a date; they accept or
+    decline in two taps on their phone, and they set the dates they can't
+    serve, and nobody is ever asked on one of those. Requests, reminders the
+    week before and on the morning, and changes reach them in our team chat,
+    a Matrix server, and on the web. Members see the coming services and
+    their order, and watch the stream. On Sunday the tech and stream operator
+    in the booth runs live mode: the order with its clock times and the cues
+    for each team, where one press moves to the next item and everyone's
+    screen follows. Moving on switches OBS, which streams and records the
+    service, to that item's scene and shows its lower third (a name, a Bible
+    reference, a song's credits), and readies Ableton Live on the stage
+    computer, which plays the click, cues and backing tracks in the band's
+    ears, with the next song's tempo and tracks. Nothing ever changes on the
+    stream or in the band's ears in the middle of a song, and if OBS or
+    Ableton stops answering the operator sees it at once and can take over
+    by hand. Minors' details and pastoral notes are protected under the GDPR.
+    It runs on the Kubernetes cluster it is built on, which can reach the
+    booth and stage computers on the church's network.

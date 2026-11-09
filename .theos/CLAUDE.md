@@ -1,11 +1,15 @@
 # church-ops: maintainer notes
 
-This repository is a theos Domain template (github.com/JairJosafath/theos):
-the catalog entry `church`, what software for a church to organize itself
-is about, for theos's implementer and reviewer agents. It mirrors theos's
+This repository's root Markdown is a theos Domain template
+(github.com/JairJosafath/theos): the catalog entry `church-ops`
+(`model/domain.yaml`), what software for a church to organize itself is
+about, for theos's implementer and reviewer agents. It mirrors theos's
 `templates/webshop-domain`. A theos `Domain` names this repository's URL
-and a pinned tag; every Container of a SoftwareSystem whose `domainRefs`
-names `church` gets the files under `docs/agents/domain/church/`.
+and a pinned ref; every Container of a SoftwareSystem whose `domainRefs`
+names `church-ops` gets the files under `docs/agents/domain/church-ops/`.
+The same repository also holds the product's model (`model/`, `brief.yaml`,
+the root `CLAUDE.md`), which is not part of the domain: see *Cutting the
+next tag*.
 
 These notes live in `.theos/` on purpose: theos does not render `.theos/`,
 and a `CLAUDE.md` at the root would be copied into every Container, where
@@ -33,7 +37,7 @@ maintainer material here.
 
 A tag is a release: theos pins it in the Domain's `spec.template.ref`, and
 a tag is never moved or re-used once a Domain points at it (a scaffolded
-Container records `church@<tag>`).
+Container records `church-ops@<tag>`).
 
 1. Make the change on a branch and merge it to `main`.
 2. Check the shape: only `.md` files outside `.theos/`, the README names
@@ -42,12 +46,18 @@ Container records `church@<tag>`).
    and fixes, a minor (`v0.2.0`) for a new topic, a changed choice or a new
    practice or common mistake, a major (`v1.0.0`) for a renamed or removed
    topic file or when the domain is declared stable.
-4. Tag `main` with an annotated tag and push it:
+4. Tag a commit that holds only the domain: the root `.md` files and
+   `.theos/`. Until theos can read a subdirectory
+   (github.com/JairJosafath/theos/issues/35), never tag `main`: it also
+   holds `model/`, `brief.yaml` and a root `CLAUDE.md`, which would fail
+   or leak into every Container. Make the domain-only commit from the
+   last domain tag with the changed domain files checked out from `main`,
+   then tag it with an annotated tag and push it:
    `git tag -a v0.2.0 -m "church domain v0.2.0: <what changed>"`, then
    `git push origin v0.2.0`.
 5. Update the Domain's `spec.template.ref` to the new tag. A Domain is
    scaffolded once: Containers already scaffolded keep the old text, and a
-   person updates their copy under `docs/agents/domain/church/` by hand if
+   person updates their copy under `docs/agents/domain/church-ops/` by hand if
    they want it.
 
 ## Releases

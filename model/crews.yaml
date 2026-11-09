@@ -1,0 +1,52 @@
+# A Crew per Container: the Agents that work its repository's issues. All of
+# them are the chart's seed Agents (agents.* in its values): implementer
+# (Sonnet), reviewer and designer (Opus). The chart seeds no Agents called
+# triager or spec writer, so designer triages the status/proposed issues and
+# implementer writes the specs of the status/needs-spec ones, as theos's
+# README shows. specApproval: Person means a spec's pull request merges only
+# once a person approves it on the Git host (or from chat). The DataStore has
+# no Crew: it has no repository of its own.
+apiVersion: theos.factory.io/v1beta1
+kind: Crew
+metadata:
+  name: web
+  namespace: church-ops
+spec:
+  containerRef: {name: web}
+  displayName: Web
+  description: Builds the web app's issues.
+  implementer: {name: implementer}
+  reviewer: {name: reviewer}
+  triager: {name: designer}
+  specWriter: {name: implementer}
+  specApproval: Person
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Crew
+metadata:
+  name: api
+  namespace: church-ops
+spec:
+  containerRef: {name: api}
+  displayName: API
+  description: Builds the API's issues.
+  implementer: {name: implementer}
+  reviewer: {name: reviewer}
+  triager: {name: designer}
+  specWriter: {name: implementer}
+  specApproval: Person
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Crew
+metadata:
+  name: integrations-worker
+  namespace: church-ops
+spec:
+  containerRef: {name: integrations-worker}
+  displayName: Integrations worker
+  description: Builds the integrations worker's issues.
+  implementer: {name: implementer}
+  reviewer: {name: reviewer}
+  triager: {name: designer}
+  specWriter: {name: implementer}
+  specApproval: Person

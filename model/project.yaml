@@ -1,0 +1,60 @@
+# One Project per namespace, named after it. The chart's seed makes Project
+# church-ops when church-ops is in gitea.projects and the namespace has none;
+# applying this one sets its story text. No license: the factory never picks
+# one, and with none set each Container is scaffolded without a LICENSE.
+apiVersion: theos.factory.io/v1beta1
+kind: Project
+metadata:
+  name: church-ops
+  namespace: church-ops
+spec:
+  displayName: Church Ops
+  description: >-
+    How a church organizes itself week to week: planning services and their
+    songs, scheduling the volunteers who serve in them, and running the
+    stream and the band's computer from the run sheet on a Sunday.
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Person
+metadata:
+  name: worship-leader
+  namespace: church-ops
+spec:
+  displayName: Worship leader
+  description: Plans each service's songs, arrangements and keys, and leads the band and its rehearsals.
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Person
+metadata:
+  name: volunteer
+  namespace: church-ops
+spec:
+  displayName: Volunteer
+  description: Serves in a team (band, sound, stream, welcome, kids' church); accepts or declines requests and sets their blockouts.
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Person
+metadata:
+  name: pastor
+  namespace: church-ops
+spec:
+  displayName: Pastor
+  description: Owns the service order, adds the sermon and readings, and keeps the pastoral notes no one else sees.
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Person
+metadata:
+  name: tech-operator
+  namespace: church-ops
+spec:
+  displayName: Tech and stream operator
+  description: Runs live mode in the booth on a Sunday, advancing the run sheet that switches the stream's scenes and starts the band's tracks.
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Person
+metadata:
+  name: member
+  namespace: church-ops
+spec:
+  displayName: Member
+  description: Belongs to the church; sees the coming services and their order, and watches the stream.
