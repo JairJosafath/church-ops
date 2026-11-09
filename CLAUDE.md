@@ -11,7 +11,7 @@ domain text its agents read.
 
 | Path | What it is |
 | --- | --- |
-| `model/project.yaml` | Project `church-ops` and the Persons: worship leader, volunteer, pastor, tech and stream operator, member |
+| `model/project.yaml` | Project `church-ops` and the Persons: worship leader, team leader, volunteer, pastor, tech and stream operator, member |
 | `model/domain.yaml` | Domain `church-ops`, pinned to this repository's domain files at a commit |
 | `model/systems.yaml` | SoftwareSystem `church-ops` (Internal, `domainRefs: [church-ops]`), and the External systems `obs`, `ableton` and `chat-host` |
 | `model/containers.yaml` | Containers `web` (react-vite, static-site), `api` (python-fastapi, service) and `integrations-worker` (python-cli, worker), all on k8s-manifests, and DataStore `church-ops-db` (postgres) |
@@ -48,9 +48,19 @@ fails (`Planned=False`), or on its own:
 
 ```bash
 kubectl -n church-ops delete brief church-ops --ignore-not-found   # keeps what it made
+# Relationships and the DataStore first: a Container scaffolds seconds after
+# it is created, with the Connectors of the Relationships that exist then, and
+# `kubectl apply -f model/` would create containers.yaml first
+# (JairJosafath/theos#43).
+kubectl apply -f model/project.yaml -f model/domain.yaml -f model/systems.yaml -f model/relationships.yaml
 kubectl apply -f model/
 kubectl -n church-ops get theos
 ```
+
+`api` must list `postgres@<ref>` in `status.scaffoldedFrom`. If its Relationship to
+`church-ops-db` reads `Applied=False`, `AddedAfterScaffold`, it scaffolded before the
+Relationship existed: delete the Container and its repository, and apply again in this
+order.
 
 Delete anything a failed round created under names that differ from
 `model/`. Applying `brief.yaml` after `model/` keeps the hand-written model:
