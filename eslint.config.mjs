@@ -1,0 +1,78 @@
+// Lint config for the web app's TypeScript: typescript-eslint's strictest
+// type-checked presets, plus the rules below. `make lint` runs ESLint with
+// --max-warnings 0, so any finding fails `make check`. Every rule turned off
+// or changed here says why. Changing this file is the Standard's job, not a
+// task's.
+import js from '@eslint/js';
+import reactHooks from 'eslint-plugin-react-hooks';
+import { defineConfig, globalIgnores } from 'eslint/config';
+import tseslint from 'typescript-eslint';
+
+export default defineConfig(
+  globalIgnores(['dist/']),
+  js.configs.recommended,
+  tseslint.configs.strictTypeChecked,
+  tseslint.configs.stylisticTypeChecked,
+  // The Rules of Hooks and the React Compiler's checks of the Rules of React:
+  // pure components, no refs read during render, no state set in an effect.
+  reactHooks.configs.flat.recommended,
+  {
+    languageOptions: {
+      parserOptions: {
+        // Type information from tsconfig.json, for every file it includes.
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    linterOptions: {
+      // A disable comment that silences nothing is dead code.
+      reportUnusedDisableDirectives: 'error',
+    },
+    rules: {
+      // A switch over a union or enum names every member, so a new member
+      // fails the lint wherever it must be handled. A default branch does
+      // not count.
+      '@typescript-eslint/switch-exhaustiveness-check': [
+        'error',
+        { considerDefaultExhaustiveForUnions: false, requireDefaultForNonUnion: true },
+      ],
+      // Exported functions state their parameter and return types: they are
+      // the module's contract.
+      '@typescript-eslint/explicit-module-boundary-types': 'error',
+      // Members never reassigned after construction are readonly.
+      '@typescript-eslint/prefer-readonly': 'error',
+      // Array#sort without a compare function sorts numbers as strings.
+      '@typescript-eslint/require-array-sort-compare': ['error', { ignoreStringArrays: true }],
+      // Users see the page, never the browser's console.
+      'no-console': 'error',
+      // An effect that misses a dependency runs on stale values. The preset
+      // only warns.
+      'react-hooks/exhaustive-deps': 'error',
+      eqeqeq: ['error', 'always'],
+      curly: ['error', 'all'],
+    },
+  },
+  {
+    // The page runs in the browser, where Node's globals and modules don't
+    // exist; tsconfig.json has Node's types only for vite.config.ts.
+    files: ['src/**'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        ...['process', 'Buffer', 'global', '__dirname', '__filename', 'require'].map((name) => ({
+          name,
+          message: 'The page runs in the browser, not Node.',
+        })),
+      ],
+      'no-restricted-imports': [
+        'error',
+        { patterns: [{ group: ['node:*'], message: 'The page runs in the browser, not Node.' }] },
+      ],
+    },
+  },
+  {
+    // Build and config scripts are plain JavaScript, outside tsconfig.json.
+    files: ['**/*.mjs'],
+    extends: [tseslint.configs.disableTypeChecked],
+  },
+);

@@ -1,0 +1,62 @@
+# Sources
+
+Every source read to write `docs/style/`. The TypeScript
+sources were read on 2026-10-02, the React, Vite, accessibility and testing
+sources on 2026-10-07. The cross-language sources were read on
+2026-09-30 for another Standard, whose `principles.md` this one adapts; they were
+not read again. Version or date as shown on the page; "live" when the page shows
+none.
+
+## TypeScript
+
+| Source                                                                                                                     | Version / date                                                             |
+| -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Google TypeScript Style Guide — https://google.github.io/styleguide/tsguide.html                                           | live                                                                       |
+| TypeScript handbook, Do's and Don'ts — https://www.typescriptlang.org/docs/handbook/declaration-files/do-s-and-don-ts.html | live                                                                       |
+| typescript-eslint shared configs — https://typescript-eslint.io/users/configs/                                             | live; `strict-type-checked` is not semver-stable, so the version is pinned |
+
+## React and Vite
+
+| Source                                                                                                  | Version / date                                       |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Rules of React — https://react.dev/reference/rules                                                      | live                                                 |
+| Components and Hooks must be pure — https://react.dev/reference/rules/components-and-hooks-must-be-pure | live                                                 |
+| Rules of Hooks — https://react.dev/reference/rules/rules-of-hooks                                       | live                                                 |
+| You Might Not Need an Effect — https://react.dev/learn/you-might-not-need-an-effect                     | live                                                 |
+| Synchronizing with Effects — https://react.dev/learn/synchronizing-with-effects                         | live                                                 |
+| Choosing the State Structure — https://react.dev/learn/choosing-the-state-structure                     | live                                                 |
+| Rendering Lists — https://react.dev/learn/rendering-lists                                               | live                                                 |
+| eslint-plugin-react-hooks — https://react.dev/reference/eslint-plugin-react-hooks                       | live; 7.1.1 pinned, its preset read from the package |
+| `memo` — https://react.dev/reference/react/memo                                                         | live                                                 |
+| `lazy` — https://react.dev/reference/react/lazy                                                         | live                                                 |
+| Common components (`dangerouslySetInnerHTML`) — https://react.dev/reference/react-dom/components/common | live                                                 |
+| Vite, Env Variables and Modes — https://vite.dev/guide/env-and-mode                                     | v8.3.1                                               |
+| Vite, Static Asset Handling — https://vite.dev/guide/assets                                             | v8.3.1                                               |
+| Vite, Building for Production — https://vite.dev/guide/build                                            | v8.3.1                                               |
+| WCAG 2.2 quick reference — https://www.w3.org/WAI/WCAG22/quickref/                                      | WCAG 2.2                                             |
+| W3C WAI forms tutorial, labels — https://www.w3.org/WAI/tutorials/forms/labels/                         | May 13, 2024                                         |
+| Testing Library, guiding principles — https://testing-library.com/docs/guiding-principles               | live                                                 |
+| Testing Library, queries priority — https://testing-library.com/docs/queries/about                      | live                                                 |
+
+## Tools
+
+The versions pinned in the Framework's `package.json` and `package-lock.json`:
+TypeScript 6.0.3 (typescript-eslint 8.71.0 supports `<6.1.0`, so not 7.x),
+ESLint 10.11.0, @eslint/js 10.0.1, typescript-eslint 8.71.0,
+eslint-plugin-react-hooks 7.1.1, Prettier 3.9.9, vitest 5.0.3, Vite 8.3.3,
+@vitejs/plugin-react 6.1.2, React and React DOM 19.3.0, @types/react and
+@types/react-dom 19.3.0, @types/node 24.19.1. Every ESLint rule this digest
+names was checked to be on in the resolved config (`eslint --print-config`).
+
+## Cross-language (read 2026-09-30)
+
+| Source                                                                                                             | Version / date |
+| ------------------------------------------------------------------------------------------------------------------ | -------------- |
+| LLVM Coding Standards — https://llvm.org/docs/CodingStandards.html                                                 | live           |
+| Chromium style guide index — https://chromium.googlesource.com/chromium/src/+/HEAD/styleguide/styleguide.md        | HEAD           |
+| Google style guides index — https://google.github.io/styleguide/                                                   | live           |
+| Mozilla C++ coding style — https://firefox-source-docs.mozilla.org/code-quality/coding-style/coding_style_cpp.html | live           |
+| Linux kernel coding style — https://docs.kernel.org/process/coding-style.html                                      | live           |
+| C++ Core Guidelines — https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines                                 | Jun 14, 2026   |
+| Rust API Guidelines, naming — https://rust-lang.github.io/api-guidelines/naming.html                               | live           |
+| GNU Coding Standards — https://www.gnu.org/prep/standards/standards.html                                           | April 27, 2026 |

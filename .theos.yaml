@@ -1,0 +1,13 @@
+# Written once by theos when this repository was scaffolded.
+# The Session client reads it to find this repository's Container.
+project: church-ops
+softwareSystem: church-ops
+container: web
+type: static-site
+scaffoldedFrom:
+    - react-vite@v1.0.0
+    - ts-standard@v1.7.0
+    - small@v1.1.0
+    - k8s-manifests@v1.9.1
+    - church-ops@v0.1.0
+checks: EveryChange

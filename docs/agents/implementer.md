@@ -1,0 +1,111 @@
+# Implementer guide
+
+You implement one Gitea issue in this repository, as one pull request.
+`AGENTS.md` holds the rules; this guide is how to work an issue. A reviewer
+checks your work against `docs/agents/reviewer.md`, so read that too.
+
+## Before you write code
+
+1. **Read the issue.** Goal, every acceptance criterion, Out of scope, Notes.
+   The acceptance criteria are the contract: meet each one, add nothing they
+   don't ask for. Out of scope stays out.
+2. **Read the C4 context** you were given: the system's needs, this Container,
+   its relationships. Needs bind every change, even ones the issue doesn't
+   repeat (such as "works without a mouse").
+3. **Read the related repositories** under `/workspace/related/<name>`, if any:
+   the parts this issue touches, such as the API this page calls and
+   the shape of its responses. They are read-only; never change them or
+   copy their code.
+4. **Read the code** you'll change and its tests. Find where each criterion lands.
+5. **Plan briefly:** for each criterion, the test that will prove it and the
+   code that will make it pass. If a criterion is ambiguous, choose the reading
+   that fits the system's needs and say so in your summary. Don't widen scope.
+
+## While you work
+
+- **Test first.** For each criterion, write a test that fails, then make it pass.
+  A bug fix starts with a test that shows the bug.
+- **The smallest change that meets every criterion.** No drive-by refactors,
+  renames or reformatting outside the issue; note them as follow-ups instead.
+- **Keep the change focused:** one issue, one pull request, small Conventional
+  Commits.
+- **Update what users read** in the same change when behaviour they see
+  changes: `README.md` (how to use and configure the app) and a
+  `CHANGELOG.md` entry under "Unreleased".
+- **`make check` green before every commit.** When a rule fires, fix the code.
+- **Protected files** (the Standard's and the platform's, listed in
+  `AGENTS.md`) change only through a Standard change, below. The Git host
+  refuses them in a normal pull request.
+
+## When CI runs the full check
+
+The Container's owner chooses it (its `checks` setting). When
+`.gitea/workflows/check.yaml` has a `full` job, the choice is `BeforeRelease`:
+CI runs only `make check-light` (lint and the type or vet checks; no
+tests) on your pull request and on `main`, so your own `make check` before every
+commit is the only full check your change gets until a release. The full
+`make check` runs on a push to `release-check/vX.Y.Z` at the commit a release
+will be tagged at, and a release is tagged only once that `full` job passes. If
+you are asked to tag a release by hand, push that branch at the commit first,
+wait for `check / full (push)` to pass, then tag the commit and delete the
+branch; never tag a commit whose `full` job failed. Without a `full` job, CI runs
+`make check` on every change.
+
+## Standard changes
+
+If the issue truly needs a change to a protected file, make it in the same
+work. The factory moves that edit to a proposal branch and files a separate
+Task that reviews and merges it. Then:
+
+- The protected change merges first, so it must work on `main` without the
+  rest of your work. Never have it call a file only your branch has; use a hook
+  that does nothing until the rest lands, such as a `Makefile` target that calls
+  `npm run dist --if-present`, or an npm script that runs an optional step only
+  when it exists.
+- The rest of your work merges after it and may rely on it.
+- End your summary with a line: `Standard change: <why the issue needs it>`.
+- Never change `AGENTS.md`, `docs/agents/` or `.theos.yaml`. No Standard
+  change can.
+- When your own Task is the Standard change, change the paths the issue names.
+  Change another file only where `make check` fails without it, such as a test
+  that checks what those paths produce; change no other protected file, and do
+  not propose another Standard change.
+
+## TypeScript and React notes
+
+- Put logic in modules that import neither React nor the DOM and test them
+  with plain vitest; keep components to rendering and wiring events to that
+  logic.
+- A test that must render a component brings its own DOM: add `jsdom` and
+  `@testing-library/react` with `npm install --save-dev --save-exact`, put
+  `// @vitest-environment jsdom` at the top of that test file, and query by
+  role and label as a user would.
+- Iterate with `npx vitest` and `npx tsc --noEmit`, and look at the page with
+  `npm run dev`; finish with `make check`, which also builds the site.
+- Follow `docs/style/react.md`: pure components, effects only to sync with
+  something outside React, every input labelled, nothing secret in
+  `import.meta.env` (the build puts every `VITE_` value in the page).
+- Tests never measure time: no real timers or `setTimeout` waits, no bounds
+  such as "renders within 500 ms" on `performance.now()` or `Date.now()`.
+  They pass in your sandbox and fail on the shared CI runner.
+- A budget in the issue or the needs ("within 200 ms", "a 10,000-row list")
+  gets a vitest `bench` on realistic input, not a test; put the numbers and
+  the input size in the summary.
+- Timing logic (debounce, timeouts, retries) is tested with fake timers
+  (`vi.useFakeTimers()`, then `vi.advanceTimersByTime`), or by awaiting the
+  event it fires.
+- You can't open a browser here. Say which behaviour needs a person to try in
+  a real browser (layout, focus, screen readers).
+
+## Your summary
+
+Your summary becomes the pull request description, in the shape of
+`.gitea/PULL_REQUEST_TEMPLATE.md`:
+
+- **Summary:** what changed and why, in two or three sentences.
+- **Each acceptance criterion:** met or not met; where (file and function);
+  the test that proves it (test name).
+- **How it was checked:** `make check`, numbers for any budget, manual runs.
+- **Could not be verified:** what and why (needs a real browser, a display, the
+  network). Never claim what you didn't run.
+- **Follow-ups:** problems you saw outside the issue's scope.
