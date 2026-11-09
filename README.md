@@ -36,6 +36,51 @@ make help    # every target
   and `tests/test_main.py` runs `/readyz` against it; elsewhere that test is skipped.
   It needs no token.
 
+## Records
+
+The routes below keep their records in Postgres when `DATABASE_URL` is set: start-up
+creates the tables that are missing (`app/postgres_store.py`) and leaves existing ones
+as they are, and fails when the database gives no connection within 30 seconds.
+Without `DATABASE_URL` they are kept in memory and lost when the process ends, which
+start-up logs as a warning. The routes take and give JSON, as `/docs` shows; times
+carry a UTC offset and the api gives them at Amsterdam's (`app/local_time.py`).
+Errors are `{"detail": "..."}`: 404 for a missing record, 409 for a request that
+conflicts with the records, 422 for invalid input.
+
+- `GET /people`, `POST /people`: people, by name.
+- `GET /teams`, `POST /teams`, `POST /teams/{team_id}/positions`: teams and their positions.
+- `GET /songs`, `POST /songs`, `GET /songs/{song_id}`, `POST /songs/{song_id}/arrangements`:
+  songs, by title, and their arrangements.
+- `GET /services` (`?from=YYYY-MM-DD`), `POST /services`, `GET /services/{id}`,
+  `PATCH /services/{id}`, `POST /services/{id}/copy`: services, by start. A copy has
+  the original's items and no requests, and no link back.
+- `POST /services/{id}/items`, `PATCH /services/{id}/items/{item_id}`,
+  `DELETE /services/{id}/items/{item_id}`, `PUT /services/{id}/items/order`: the
+  order. Each item starts at the service's start plus the lengths before it, and
+  positions stay 0, 1, 2... through every change. A song names an arrangement and no
+  other kind does; a header takes no time.
+- `POST /services/{id}/requests`, `GET /requests`, `POST /requests/{id}/answer`,
+  `POST /requests/{id}/cancel`: scheduling. A request is an invitation; one on a date
+  inside the person's blockout is still sent, with `blocked: true`. A second pending
+  or accepted request for the same person, service and position, or an answer to one
+  no longer pending, is 409. Accepting queues reminders a week and a day before the
+  service (those still to come); cancelling queues a cancellation and drops the
+  reminders not yet sent; moving a service's start tells who is scheduled and moves
+  their reminders.
+- `GET /people/{id}/blockouts`, `POST /people/{id}/blockouts`, `DELETE /blockouts/{id}`:
+  the dates a person cannot serve. The reason never appears in a request or message.
+- `GET /notifications/due`, `POST /notifications/{id}/sent`: the outbox the worker
+  delivers from, oldest first.
+- `POST /services/{id}/live`, `GET /services/{id}/live`, `POST /services/{id}/live/advance`,
+  `POST /services/{id}/live/handover`, `PUT /services/{id}/live/devices`,
+  `DELETE /services/{id}/live`, `GET /live`: live mode. One named person holds
+  control and only they advance (409 names who holds it); a handover passes it on.
+  `version` goes up when the current item moves, and only then.
+
+`tests/` runs every test of these routes twice: on the in-memory store, and on
+Postgres when `TEST_DATABASE_URL` names a database, in a schema of its own that the
+run drops at the end.
+
 ## Logs
 
 `app/logs.py` writes logs to stdout as JSON, one object per line: one line per
