@@ -139,15 +139,42 @@ def items(tx: store.Records, service: records.Service) -> list[models.Item]:
     ]
 
 
-def request(tx: store.Records, record: records.Request) -> models.Request:
-    """Return a request's body, with the service, position, team and person it names."""
-    service = found_service(tx, record.service_id)
-    place = tx.position(record.position_id)
+def _position_and_team(
+    tx: store.Records, position_id: int
+) -> tuple[records.Position, records.Team]:
+    place = tx.position(position_id)
     if place is None:
-        raise errors.not_found(errors.Kind.POSITION, record.position_id)
+        raise errors.not_found(errors.Kind.POSITION, position_id)
     group = tx.team(place.team_id)
     if group is None:
         raise errors.not_found(errors.Kind.TEAM, place.team_id)
+    return place, group
+
+
+def _also_asked(tx: store.Records, record: records.Request) -> list[models.AlsoAsked]:
+    """Return the person's other open requests at the request's service, newest first."""
+    others = tx.requests(
+        records.RequestQuery(person_id=record.person_id, service_id=record.service_id)
+    )
+    asked: list[models.AlsoAsked] = []
+    for other in others:
+        if other.id == record.id or other.status not in records.OPEN_REQUEST_STATUSES:
+            continue
+        place, group = _position_and_team(tx, other.position_id)
+        asked.append(
+            models.AlsoAsked(position=position(place), team_name=group.name, status=other.status)
+        )
+    return asked
+
+
+def request(tx: store.Records, record: records.Request) -> models.Request:
+    """Return a request's body, with the service, position, team and person it names.
+
+    also_asked is read from the store now: the person's other pending or accepted
+    requests at the same service, newest first; empty when there are none.
+    """
+    service = found_service(tx, record.service_id)
+    place, group = _position_and_team(tx, record.position_id)
     return models.Request(
         id=record.id,
         service_id=service.id,
@@ -160,6 +187,7 @@ def request(tx: store.Records, record: records.Request) -> models.Request:
         blocked=record.blocked,
         created_at=local_time.local(record.created_at),
         answered_at=None if record.answered_at is None else local_time.local(record.answered_at),
+        also_asked=_also_asked(tx, record),
     )
 
 

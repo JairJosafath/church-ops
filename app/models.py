@@ -210,7 +210,11 @@ class Item(BaseModel):
 
 
 class NewItem(BaseModel):
-    """An item to append to a service; a song names its arrangement_id, nothing else does."""
+    """An item to append to a service; a song names its arrangement_id, nothing else does.
+
+    off_stream left out takes the kind's default (planning.default_off_stream): true for
+    a prayer, false for every other kind. It may be left out but not null.
+    """
 
     kind: records.ItemKind
     title: Name
@@ -219,8 +223,13 @@ class NewItem(BaseModel):
     key: Key | None = None
     scene: ShortText | None = None
     lower_third: ShortText | None = None
-    off_stream: bool = False
+    off_stream: bool | None = None
     notes: LongText = ""
+
+    @model_validator(mode="after")
+    def _not_null(self) -> Self:
+        _refuse_nulls(self, ("off_stream",))
+        return self
 
 
 class ItemChanges(BaseModel):
@@ -251,11 +260,23 @@ class ItemOrder(BaseModel):
     item_ids: list[Id]
 
 
+class AlsoAsked(BaseModel):
+    """Another open request of the same person at the same service: pending or accepted."""
+
+    position: Position
+    team_name: str
+    status: records.RequestStatus
+
+
 class Request(BaseModel):
     """An invitation to a person to fill a position at a service.
 
     blocked is true when the service's date was in one of the person's blockouts when
-    the request was made; answered_at is null until they accept or decline.
+    the request was made; answered_at is null until they accept or decline. also_asked
+    lists the person's other pending or accepted requests at the same service, newest
+    first, as they are when the request is read, so a planner sees that the person is
+    already asked or serving there; it is empty when there are none, and never holds
+    the request itself.
     """
 
     id: int
@@ -269,6 +290,7 @@ class Request(BaseModel):
     blocked: bool
     created_at: datetime
     answered_at: datetime | None
+    also_asked: list[AlsoAsked]
 
 
 class NewRequest(BaseModel):

@@ -38,6 +38,15 @@ def ends_at(starts_at: datetime, total_seconds: int) -> datetime:
     return starts_at.astimezone(UTC) + timedelta(seconds=total_seconds)
 
 
+def default_off_stream(kind: records.ItemKind) -> bool:
+    """Return whether a new item of this kind is off stream when the planner does not say.
+
+    A prayer is: pastoral moments default off stream and are put on stream on purpose
+    (streaming-and-obs). Every other kind is on stream.
+    """
+    return kind is records.ItemKind.PRAYER
+
+
 def check_item(fields: records.ItemFields) -> None:
     """Check that an item's fields fit its kind.
 

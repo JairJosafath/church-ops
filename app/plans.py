@@ -104,6 +104,9 @@ def _found_item(tx: store.Records, service_id: int, item_id: int) -> records.Ite
 def add_item(source: store.Store, service_id: int, body: models.NewItem) -> models.Item:
     """Append an item to a service's order and return it.
 
+    Without off_stream in the body, the item takes its kind's default
+    (planning.default_off_stream).
+
     Raises:
         errors.NotFoundError: when there is no such service, or no such arrangement.
         errors.InvalidError: when the fields do not fit the item's kind.
@@ -116,7 +119,9 @@ def add_item(source: store.Store, service_id: int, body: models.NewItem) -> mode
         key=body.key,
         scene=body.scene,
         lower_third=body.lower_third,
-        off_stream=body.off_stream,
+        off_stream=planning.default_off_stream(body.kind)
+        if body.off_stream is None
+        else body.off_stream,
         notes=body.notes,
     )
     with source.write() as tx:

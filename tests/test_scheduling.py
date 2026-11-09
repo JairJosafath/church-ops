@@ -65,6 +65,7 @@ def test_a_request_is_201_pending_and_names_what_it_asks(api: TestClient) -> Non
         "blocked": False,
         "created_at": "2026-11-02T13:00:00+01:00",
         "answered_at": None,
+        "also_asked": [],
     }
     assert api.get(f"/services/{plan.service['id']}").json()["requests"] == [request]
 
@@ -112,6 +113,89 @@ def test_a_services_date_is_its_date_in_amsterdam(api: TestClient) -> None:
     blockout = {"starts_on": "2026-11-15", "ends_on": "2026-11-15"}
     api.post(f"/people/{plan.person['id']}/blockouts", json=blockout)
     assert ask(api, plan)["blocked"] is True
+
+
+def also_asked(request: Json) -> list[tuple[str, str, str]]:
+    return [(a["position"]["name"], a["team_name"], a["status"]) for a in request["also_asked"]]
+
+
+def test_a_request_names_the_persons_other_open_requests_at_the_service(
+    api: TestClient, fake_clock: FakeClock
+) -> None:
+    plan = make_plan(api)
+    keys = api.post(f"/teams/{plan.position['team_id']}/positions", json={"name": "Keys"}).json()
+    stream = api.post("/teams", json={"name": "Stream"}).json()
+    camera = api.post(f"/teams/{stream['id']}/positions", json={"name": "Camera 2"}).json()
+    drums = ask(api, plan)
+    assert drums["also_asked"] == []
+    api.post(f"/requests/{drums['id']}/answer", json={"accept": True})
+    fake_clock.advance(timedelta(minutes=1))
+    on_keys = ask(api, Plan(service=plan.service, position=keys, person=plan.person))
+    assert on_keys["also_asked"] == [
+        {"position": plan.position, "team_name": "Worship band", "status": "accepted"}
+    ]
+    fake_clock.advance(timedelta(minutes=1))
+    on_camera = ask(api, Plan(service=plan.service, position=camera, person=plan.person))
+    assert also_asked(on_camera) == [
+        ("Keys", "Worship band", "pending"),
+        ("Drums", "Worship band", "accepted"),
+    ]
+    # Read later, an earlier request names the ones made since, and never itself.
+    [listed_drums] = [r for r in api.get("/requests").json() if r["id"] == drums["id"]]
+    assert also_asked(listed_drums) == [
+        ("Camera 2", "Stream", "pending"),
+        ("Keys", "Worship band", "pending"),
+    ]
+    by_id = {r["id"]: r for r in api.get(f"/services/{plan.service['id']}").json()["requests"]}
+    assert also_asked(by_id[on_keys["id"]]) == [
+        ("Camera 2", "Stream", "pending"),
+        ("Drums", "Worship band", "accepted"),
+    ]
+    answered = api.post(f"/requests/{on_keys['id']}/answer", json={"accept": True}).json()
+    assert also_asked(answered) == [
+        ("Camera 2", "Stream", "pending"),
+        ("Drums", "Worship band", "accepted"),
+    ]
+    cancelled = api.post(f"/requests/{on_camera['id']}/cancel").json()
+    assert also_asked(cancelled) == [
+        ("Keys", "Worship band", "accepted"),
+        ("Drums", "Worship band", "accepted"),
+    ]
+
+
+@pytest.mark.parametrize("ending", ["decline", "cancel"], ids=str)
+def test_a_closed_request_is_not_also_asked(api: TestClient, ending: str) -> None:
+    plan = make_plan(api)
+    keys = api.post(f"/teams/{plan.position['team_id']}/positions", json={"name": "Keys"}).json()
+    first = ask(api, plan)
+    if ending == "decline":
+        api.post(f"/requests/{first['id']}/answer", json={"accept": False})
+    else:
+        api.post(f"/requests/{first['id']}/cancel")
+    second = ask(api, Plan(service=plan.service, position=keys, person=plan.person))
+    assert second["also_asked"] == []
+    by_id = {r["id"]: r for r in api.get(f"/services/{plan.service['id']}").json()["requests"]}
+    assert by_id[second["id"]]["also_asked"] == []
+    assert also_asked(by_id[first["id"]]) == [("Keys", "Worship band", "pending")]
+
+
+def test_requests_of_other_people_and_other_services_are_not_also_asked(
+    api: TestClient,
+) -> None:
+    plan = make_plan(api)
+    keys = api.post(f"/teams/{plan.position['team_id']}/positions", json={"name": "Keys"}).json()
+    bram = api.post("/people", json={"name": "Bram"}).json()
+    evening = api.post(
+        "/services",
+        json={
+            "title": "Sunday evening",
+            "service_type": "Sunday evening",
+            "starts_at": "2026-11-15T19:00:00+01:00",
+        },
+    ).json()
+    ask(api, Plan(service=plan.service, position=keys, person=bram))
+    ask(api, Plan(service=evening, position=keys, person=plan.person))
+    assert ask(api, plan)["also_asked"] == []
 
 
 def test_a_second_open_request_for_the_same_position_is_409(api: TestClient) -> None:

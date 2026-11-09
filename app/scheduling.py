@@ -17,8 +17,6 @@ from app import errors, local_time, models, records, store, views
 # week and a day (chat-and-notifications).
 REMINDERS_BEFORE = (timedelta(days=7), timedelta(days=1))
 
-_OPEN = frozenset({records.RequestStatus.PENDING, records.RequestStatus.ACCEPTED})
-
 
 def is_blocked(service_date: date, blockouts: Sequence[records.Blockout]) -> bool:
     """Return whether a date falls inside any of the blockouts, their end dates included."""
@@ -112,7 +110,10 @@ def create_request(
         for other in tx.requests(
             records.RequestQuery(person_id=body.person_id, service_id=service_id)
         ):
-            if other.position_id == body.position_id and other.status in _OPEN:
+            if (
+                other.position_id == body.position_id
+                and other.status in records.OPEN_REQUEST_STATUSES
+            ):
                 msg = (
                     f"person {body.person_id} already has a {other.status} request"
                     f" ({other.id}) for position {body.position_id} at service {service_id}"
@@ -166,7 +167,7 @@ def cancel(source: store.Store, request_id: int, now: datetime) -> models.Reques
     """
     with source.write() as tx:
         request = _found_request(tx, request_id)
-        if request.status not in _OPEN:
+        if request.status not in records.OPEN_REQUEST_STATUSES:
             msg = f"request {request_id} is {request.status}; only an open one can be cancelled"
             raise errors.ConflictError(msg)
         cancelled = dataclasses.replace(request, status=records.RequestStatus.CANCELLED)

@@ -30,6 +30,11 @@ class RequestStatus(enum.StrEnum):
     CANCELLED = "cancelled"
 
 
+# The statuses of a request still open: the person is asked (pending) or scheduled
+# (accepted). A declined or cancelled request asks nothing any more.
+OPEN_REQUEST_STATUSES = frozenset({RequestStatus.PENDING, RequestStatus.ACCEPTED})
+
+
 class NotificationKind(enum.StrEnum):
     """Why a notification is sent."""
 

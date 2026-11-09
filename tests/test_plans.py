@@ -206,6 +206,72 @@ def test_an_item_of_a_missing_service_is_404(api: TestClient) -> None:
     assert api.post("/services/999/items", json=body).status_code == 404
 
 
+@pytest.mark.parametrize(
+    ("kind", "off_stream"),
+    [
+        ("prayer", True),
+        ("reading", False),
+        ("sermon", False),
+        ("video", False),
+        ("announcement", False),
+        ("header", False),
+    ],
+    ids=str,
+)
+def test_a_new_item_without_off_stream_is_off_stream_only_when_a_prayer(
+    api: TestClient, kind: str, *, off_stream: bool
+) -> None:
+    service = new_service(api)
+    length = 0 if kind == "header" else 300
+    item = add_item(api, service["id"], kind=kind, title="Item", length_seconds=length)
+    assert item["off_stream"] is off_stream
+    assert api.get(f"/services/{service['id']}").json()["items"] == [item]
+
+
+def test_a_new_song_without_off_stream_is_on_stream(api: TestClient) -> None:
+    service = new_service(api)
+    arrangement = new_arrangement(api)
+    song = add_item(api, service["id"], kind="song", title="Song", arrangement_id=arrangement["id"])
+    assert song["off_stream"] is False
+
+
+@pytest.mark.parametrize(
+    ("kind", "off_stream"),
+    [("prayer", False), ("prayer", True), ("reading", True), ("reading", False)],
+    ids=["prayer-on-stream", "prayer-off-stream", "reading-off-stream", "reading-on-stream"],
+)
+def test_an_explicit_off_stream_wins_over_the_default(
+    api: TestClient, kind: str, *, off_stream: bool
+) -> None:
+    service = new_service(api)
+    item = add_item(api, service["id"], kind=kind, off_stream=off_stream)
+    assert item["off_stream"] is off_stream
+
+
+def test_a_new_item_with_off_stream_null_is_422(api: TestClient) -> None:
+    service = new_service(api)
+    body = {"kind": "prayer", "title": "Prayer", "length_seconds": 300, "off_stream": None}
+    assert api.post(f"/services/{service['id']}/items", json=body).status_code == 422
+
+
+def test_an_existing_item_keeps_its_off_stream_when_it_becomes_a_prayer(api: TestClient) -> None:
+    service = new_service(api)
+    item = add_item(api, service["id"])
+    path = f"/services/{service['id']}/items/{item['id']}"
+    changed = api.patch(path, json={"kind": "prayer", "title": "Prayer"})
+    assert changed.status_code == 200
+    assert (changed.json()["kind"], changed.json()["off_stream"]) == ("prayer", False)
+
+
+def test_a_copy_keeps_a_prayer_put_on_stream_on_purpose(api: TestClient) -> None:
+    original = new_service(api)
+    add_item(api, original["id"], kind="prayer", title="Prayer", off_stream=False)
+    copy = api.post(
+        f"/services/{original['id']}/copy", json={"starts_at": "2026-11-22T10:00:00+01:00"}
+    ).json()
+    assert [i["off_stream"] for i in copy["items"]] == [False]
+
+
 def test_changing_a_length_moves_the_items_after_it(api: TestClient) -> None:
     service = new_service(api)
     first = add_item(api, service["id"], length_seconds=300)

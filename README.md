@@ -58,7 +58,9 @@ conflicts with the records, 422 for invalid input.
   `DELETE /services/{id}/items/{item_id}`, `PUT /services/{id}/items/order`: the
   order. Each item starts at the service's start plus the lengths before it, and
   positions stay 0, 1, 2... through every change. A song names an arrangement and no
-  other kind does; a header takes no time.
+  other kind does; a header takes no time. A new `prayer` item without `off_stream`
+  is off stream, as pastoral moments are until put on stream on purpose; every other
+  kind is on stream. An `off_stream` given always wins, and existing items keep theirs.
 - `POST /services/{id}/requests`, `GET /requests`, `POST /requests/{id}/answer`,
   `POST /requests/{id}/cancel`: scheduling. A request is an invitation; one on a date
   inside the person's blockout is still sent, with `blocked: true`. A second pending
@@ -66,7 +68,10 @@ conflicts with the records, 422 for invalid input.
   no longer pending, is 409. Accepting queues reminders a week and a day before the
   service (those still to come); cancelling queues a cancellation and drops the
   reminders not yet sent; moving a service's start tells who is scheduled and moves
-  their reminders.
+  their reminders. Every request also gives `also_asked`: the person's other pending
+  or accepted requests at the same service (position, team and status, newest first),
+  as they are when it is read, so a planner sees who is already asked or serving
+  there; it is empty when there are none.
 - `GET /people/{id}/blockouts`, `POST /people/{id}/blockouts`, `DELETE /blockouts/{id}`:
   the dates a person cannot serve. The reason never appears in a request or message.
 - `GET /notifications/due`, `POST /notifications/{id}/sent`: the outbox the worker
