@@ -56,6 +56,14 @@ Delete anything a failed round created under names that differ from
 `model/`. Applying `brief.yaml` after `model/` keeps the hand-written model:
 the planner then only files the Containers' first issues.
 
+## Working here
+
+The owner does no manual steps. Claude opens the pull requests and merges
+them itself once its own checks pass. It also pushes tags and does every other
+step the work needs. It never leaves a step for the owner. If something truly
+needs a person (an approval card, a secret, a login), say so once, plainly, and
+carry on with the rest.
+
 ## The rules
 
 - The factory's rules are in the theos repository: `docs/design.md` ("The
