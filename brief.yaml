@@ -14,29 +14,28 @@ metadata:
   namespace: church-ops
 spec:
   idea: >-
-    Church Ops is how our church organizes itself week to week, in the
-    Netherlands. The worship leader plans each Sunday service: its order of
-    songs, readings, prayers, the sermon and announcements, with a length for
-    each, and for every song the arrangement we play and the key, so the band
-    sees its charts in the key of the day. They also plan the rehearsals. The
-    pastor adds the sermon and readings to the order and keeps pastoral notes
-    and prayer requests that only they and the people the person would expect
-    may read. Volunteers serve in teams (band, sound, stream, welcome, kids'
-    church). A team leader asks them to serve on a date; they accept or
-    decline in two taps on their phone, and they set the dates they can't
-    serve, and nobody is ever asked on one of those. Requests, reminders the
-    week before and on the morning, and changes reach them in our team chat,
-    a Matrix server, and on the web. Members see the coming services and
-    their order, and watch the stream. On Sunday the tech and stream operator
-    in the booth runs live mode: the order with its clock times and the cues
-    for each team, where one press moves to the next item and everyone's
-    screen follows. Moving on switches OBS, which streams and records the
-    service, to that item's scene and shows its lower third (a name, a Bible
-    reference, a song's credits), and readies Ableton Live on the stage
-    computer, which plays the click, cues and backing tracks in the band's
-    ears, with the next song's tempo and tracks. Nothing ever changes on the
-    stream or in the band's ears in the middle of a song, and if OBS or
-    Ableton stops answering the operator sees it at once and can take over
-    by hand. Minors' details and pastoral notes are protected under the GDPR.
-    It runs on the Kubernetes cluster it is built on, which can reach the
-    booth and stage computers on the church's network.
+    Church Ops is what our church's worship team plans, schedules and
+    rehearses with, in the Netherlands. Each kind of service (Sunday
+    morning, youth night) has a template: its usual order of items and the
+    positions it needs (worship leader, vocals, keys, drums, guitar, bass,
+    front of house, stream). The worship leader starts next Sunday's plan
+    from that template, sets the songs, and for each song the arrangement,
+    the key it is played in that week and who leads it; items have lengths,
+    so the plan shows when each one starts and when the service ends, and
+    notes per team (vocals, band, tech). The plan has its times: the
+    rehearsal and the service. Our song library keeps each song's
+    arrangements with their sequence (V1 C V2 C B C), tempo, meter, length,
+    the keys we play it in, a link to a recording, and the lyrics and chords
+    as a chord chart that follows any key. Team leaders schedule their team
+    from the plan: they see which positions are still open, and for each one
+    who can play it, with anyone who blocked out that date, already serves
+    elsewhere that day or declined flagged, but never refused. Volunteers get
+    the request in our team chat, answer in one tap on their phone, can
+    decline with a reason or withdraw later, keep their own blockout dates,
+    and see their schedule. Before rehearsal every musician opens the plan
+    and sees each song in the key we play it, with the chart, the sequence,
+    the tempo and their team's notes. A grid of the coming months shows who
+    serves where. On Sunday one person advances the run sheet and everyone
+    follows with a timer per item; the stream's scene in OBS and the next
+    song in Ableton Live can follow it. We report song usage to CCLI. It
+    runs on the Kubernetes cluster it is built on.

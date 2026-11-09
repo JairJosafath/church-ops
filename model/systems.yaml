@@ -9,19 +9,21 @@ metadata:
   namespace: church-ops
 spec:
   displayName: Church Ops
-  description: Plans services and their songs, schedules the teams, and runs the stream and the band's tracks from the run sheet.
+  description: What the worship team plans, schedules and rehearses with, from the service type's template to the run sheet on Sunday.
   location: Internal
   domainRefs: [church-ops]
   needs:
-  - A worship leader plans a Sunday's songs, arrangements and keys in one place, and the band sees the charts in the key they will play
-  - A volunteer answers a request to serve in two taps and is never scheduled on a date they blocked out
-  - In live mode, one person advances the run sheet and the stream's scene and the band's next song follow it
-  - Nothing changes in the band's ears or on the stream in the middle of a song
+  - A worship leader builds next Sunday's plan from the service type's template in minutes, with each song's arrangement, key and song leader
+  - Every musician sees each song of the plan in the key it is played in, with its chart, sequence and their team's notes, before rehearsal
+  - A team leader sees which positions are still open and who can fill them; blockouts, conflicts and declines are flagged but never block
+  - A volunteer answers a request in one tap, can decline with a reason, and is reminded a week and a day before
+  - On Sunday one person advances the run sheet with item timers, and the stream's scene and the band's next song can follow it
+  - Song usage is ready for the church's CCLI report
   - Pastoral notes and minors' details are seen only by the people who must see them
   kpis:
   - Positions filled a week before each service
   - Requests answered within two days
-  - Scene switches on the stream that missed their item during live mode
+  - Plans with every song's arrangement and key set by the Wednesday before
 ---
 apiVersion: theos.factory.io/v1beta1
 kind: SoftwareSystem

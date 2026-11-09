@@ -14,7 +14,7 @@ spec:
   softwareSystemRef:
     name: church-ops
   displayName: Web
-  description: The app in the browser, to plan services, songs and run sheets, answer requests and set blockouts, and run live mode in the booth.
+  description: The app in the browser and on the phone, to plan services from templates, keep the song library and its charts, schedule teams, answer requests, rehearse and run live mode.
   type: static-site
   gitProviderRef:
     name: gitea
@@ -36,7 +36,7 @@ spec:
   softwareSystemRef:
     name: church-ops
   displayName: API
-  description: Keeps people, teams and schedules, service types, services, songs, arrangements and run sheets, and live mode's current item; says what each person may see.
+  description: Keeps people, teams and positions, service types and templates, plans with their times and needed positions, songs, arrangements and keys, requests and blockouts, song usage, and live mode.
   type: service
   gitProviderRef:
     name: gitea
