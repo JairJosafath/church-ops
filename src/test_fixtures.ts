@@ -154,6 +154,67 @@ export function liveJson(overrides: Json = {}): Json {
   };
 }
 
+// v0.2 songs and plans
+
+export function planTimeJson(overrides: Json = {}): Json {
+  return {
+    id: 31,
+    kind: 'rehearsal',
+    name: 'Band rehearsal',
+    starts_at: '2026-11-12T19:30:00+01:00',
+    ends_at: '2026-11-12T21:30:00+01:00',
+    ...overrides,
+  };
+}
+
+export function serviceTypeJson(overrides: Json = {}): Json {
+  return {
+    id: 4,
+    name: 'Sunday morning',
+    start_time: '10:00',
+    rehearsal_offset_minutes: 90,
+    template: {
+      items: [
+        {
+          kind: 'header',
+          title: 'Worship',
+          length_seconds: 0,
+          arrangement_id: null,
+          key: null,
+          scene: null,
+          lower_third: null,
+          off_stream: false,
+          notes: '',
+        },
+        {
+          kind: 'sermon',
+          title: 'Sermon',
+          length_seconds: 1800,
+          arrangement_id: null,
+          key: null,
+          scene: 'Pulpit',
+          lower_third: null,
+          off_stream: false,
+          notes: '',
+        },
+      ],
+      needed: [{ position_id: 10, count: 1 }],
+    },
+    ...overrides,
+  };
+}
+
+export function songUsageJson(overrides: Json = {}): Json {
+  return {
+    song_id: 3,
+    title: 'Amazing Grace',
+    authors: 'John Newton',
+    ccli: '22025',
+    count: 4,
+    ...overrides,
+  };
+}
+
 // v0.2 scheduling
 
 export function needJson(overrides: Json = {}): Json {

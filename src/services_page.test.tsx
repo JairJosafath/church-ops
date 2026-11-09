@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ServicesPage } from './services_page';
 import { fakeApi, type FakeApi, type Route } from './test_fetch';
-import { serviceJson, serviceSummaryJson } from './test_fixtures';
+import { serviceJson, serviceSummaryJson, serviceTypeJson } from './test_fixtures';
 
 function renderPage(routes: Readonly<Record<string, Route>>): FakeApi {
   const api = fakeApi(routes);
@@ -80,7 +80,85 @@ describe('ServicesPage', () => {
     fireEvent.change(form.getByLabelText('Title'), { target: { value: 'Advent 1' } });
     fireEvent.click(form.getByRole('button', { name: 'Create service' }));
     expect(form.getByText('Choose the date and time it starts.')).toBeTruthy();
-    expect(api.sentRoutes()).toEqual(['GET /api/services']);
+    expect(api.sentRoutes()).not.toContain('POST /api/services');
+  });
+
+  // v0.2 songs and plans
+
+  it('creates a plan from a service type on a date, with a series, and opens it', async () => {
+    const api = renderPage({
+      'GET /api/services': { json: [] },
+      'GET /api/service-types': {
+        json: [
+          serviceTypeJson(),
+          serviceTypeJson({ id: 5, name: 'Youth evening', start_time: '19:30' }),
+        ],
+      },
+      'POST /api/services': { status: 201, json: serviceJson({ id: 21, title: 'Advent 1' }) },
+    });
+    expect(await screen.findByRole('option', { name: 'Youth evening' })).toBeTruthy();
+    const form = within(screen.getByRole('form', { name: 'New service' }));
+    expect(form.getByLabelText<HTMLSelectElement>('Service type').value).toBe('4');
+    expect(form.getByText('Starts at 10:00, Dutch time.')).toBeTruthy();
+    fireEvent.change(form.getByLabelText('Date', { exact: false }), {
+      target: { value: '2026-11-29' },
+    });
+    fireEvent.change(form.getByLabelText('Title', { exact: false }), {
+      target: { value: 'Advent 1' },
+    });
+    fireEvent.change(form.getByLabelText('Series', { exact: false }), {
+      target: { value: 'Advent' },
+    });
+    fireEvent.click(form.getByRole('button', { name: 'Create service' }));
+    expect(await screen.findByText('Created Advent 1.')).toBeTruthy();
+    expect(api.sent.find((request) => request.method === 'POST')?.body).toEqual({
+      title: 'Advent 1',
+      service_type: 'Sunday morning',
+      service_type_id: 4,
+      date: '2026-11-29',
+      series: 'Advent',
+      streamed: true,
+    });
+    expect(window.location.hash).toBe('#/services/21');
+  });
+
+  it('names a plan after its type when the title is left blank', async () => {
+    const api = renderPage({
+      'GET /api/services': { json: [] },
+      'GET /api/service-types': { json: [serviceTypeJson()] },
+      'POST /api/services': { status: 201, json: serviceJson({ id: 21 }) },
+    });
+    await screen.findByRole('option', { name: 'Sunday morning' });
+    const form = within(screen.getByRole('form', { name: 'New service' }));
+    fireEvent.change(form.getByLabelText('Date', { exact: false }), {
+      target: { value: '2026-11-29' },
+    });
+    fireEvent.click(form.getByRole('button', { name: 'Create service' }));
+    expect(await screen.findByText('Created Sunday morning.')).toBeTruthy();
+    expect(api.sent.find((request) => request.method === 'POST')?.body).toMatchObject({
+      title: 'Sunday morning',
+      series: '',
+    });
+  });
+
+  it('asks for the date of a plan from a type', async () => {
+    const api = renderPage({
+      'GET /api/services': { json: [] },
+      'GET /api/service-types': { json: [serviceTypeJson()] },
+    });
+    await screen.findByRole('option', { name: 'Sunday morning' });
+    const form = within(screen.getByRole('form', { name: 'New service' }));
+    fireEvent.click(form.getByRole('button', { name: 'Create service' }));
+    expect(form.getByText('Choose the date.')).toBeTruthy();
+    expect(api.sentRoutes()).not.toContain('POST /api/services');
+  });
+
+  it('shows each service’s series, and links to the service types', async () => {
+    renderPage({ 'GET /api/services': { json: [serviceSummaryJson({ series: 'Advent' })] } });
+    expect(await screen.findByText('Sunday morning · Advent')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Service types' }).getAttribute('href')).toBe(
+      '#/service-types',
+    );
   });
 
   it('says what happened when the server cannot be reached', async () => {

@@ -6,7 +6,7 @@ import { blockoutRangeError } from './blockouts';
 import { amsterdamDate, formatClock, formatServiceDate } from './dutch_time';
 import { ActionNotice, Notice, TextField } from './form_fields';
 import { reasonError, splitSchedule } from './my_schedule';
-import { rehearseHref, routeHref } from './routes';
+import { routeHref } from './routes';
 import { useAction } from './use_action';
 import { useResource } from './use_resource';
 
@@ -210,7 +210,7 @@ function MySchedule({ person }: { readonly person: Person }): ReactElement {
                   </a>
                   <a
                     className="button secondary"
-                    href={rehearseHref(request.serviceId)}
+                    href={routeHref({ page: 'rehearse', serviceId: request.serviceId })}
                     aria-label={`Rehearse for ${request.serviceTitle}`}
                   >
                     Rehearse

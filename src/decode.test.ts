@@ -8,10 +8,10 @@ import {
   decodeObject,
   decodeString,
   field,
+  fieldOr,
   isRecord,
   nullable,
   oneOf,
-  fieldOr,
 } from './decode';
 
 describe('isRecord', () => {
@@ -91,13 +91,28 @@ describe('decoders', () => {
   });
 });
 
+// v0.2 songs and plans
 // v0.2 scheduling
+
 describe('fieldOr', () => {
+  it.each([
+    { record: { tags: ['hymn'] }, want: ['hymn'] },
+    { record: {}, want: [] },
+  ])('reads $record, or the fallback when the field is missing', ({ record, want }) => {
+    expect(fieldOr(record, 'tags', arrayOf(decodeString), [], 'song')).toEqual(want);
+  });
+
   it.each([
     { record: {}, want: [] },
     { record: { ids: [3, 4] }, want: [3, 4] },
   ])('reads $record, with the fallback when the field is missing', ({ record, want }) => {
     expect(fieldOr(record, 'ids', arrayOf(decodeInteger), [], 'p')).toEqual(want);
+  });
+
+  it('still refuses a field of the wrong shape', () => {
+    expect(() => fieldOr({ tags: 'hymn' }, 'tags', arrayOf(decodeString), [], 'song')).toThrow(
+      'song.tags: expected an array',
+    );
   });
 
   it('still refuses a field that is there with the wrong shape', () => {

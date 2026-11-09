@@ -18,6 +18,11 @@ export interface ItemFormFields {
   readonly lowerThird: string;
   readonly offStream: boolean;
   readonly notes: string;
+  // v0.2 songs and plans
+  /** The song leader's person id, or "" for none. */
+  readonly songLeaderId: string;
+  /** Each team's note, by the team's id. */
+  readonly teamNotes: Readonly<Record<string, string>>;
 }
 
 export type ItemFormErrors = Partial<Record<'title' | 'length' | 'arrangementId' | 'key', string>>;
@@ -35,6 +40,8 @@ export const ITEM_KIND_LABELS: Readonly<Record<ItemKind, string>> = {
   announcement: 'Announcement',
   header: 'Header',
 };
+
+const ID_PATTERN = /^[1-9]\d*$/;
 
 function orNull(text: string): string | null {
   const trimmed = text.trim();
@@ -54,6 +61,8 @@ export function itemFormFields(item: Item | null): ItemFormFields {
       lowerThird: '',
       offStream: false,
       notes: '',
+      songLeaderId: '',
+      teamNotes: {},
     };
   }
   return {
@@ -66,6 +75,10 @@ export function itemFormFields(item: Item | null): ItemFormFields {
     lowerThird: item.lowerThird ?? '',
     offStream: item.offStream,
     notes: item.notes,
+    songLeaderId: item.songLeader === null ? '' : String(item.songLeader.id),
+    teamNotes: Object.fromEntries(
+      item.teamNotes.map((entry) => [String(entry.teamId), entry.note]),
+    ),
   };
 }
 
@@ -85,9 +98,7 @@ export function parseItemForm(fields: ItemFormFields): ItemFormResult {
   if (lengthSeconds === null) {
     errors.length = 'Give a length such as 4:30, or minutes.';
   }
-  const arrangementId = /^[1-9]\d*$/.test(fields.arrangementId)
-    ? Number(fields.arrangementId)
-    : null;
+  const arrangementId = ID_PATTERN.test(fields.arrangementId) ? Number(fields.arrangementId) : null;
   if (isSong && arrangementId === null) {
     errors.arrangementId = 'Choose the arrangement the band plays.';
   }
@@ -110,6 +121,12 @@ export function parseItemForm(fields: ItemFormFields): ItemFormResult {
       lowerThird: orNull(fields.lowerThird),
       offStream: fields.offStream,
       notes: fields.notes,
+      songLeaderId:
+        isSong && ID_PATTERN.test(fields.songLeaderId) ? Number(fields.songLeaderId) : null,
+      teamNotes: Object.entries(fields.teamNotes)
+        .filter(([teamId]) => ID_PATTERN.test(teamId))
+        .map(([teamId, note]) => ({ teamId: Number(teamId), note: note.trim() }))
+        .sort((a, b) => a.teamId - b.teamId),
     },
   };
 }

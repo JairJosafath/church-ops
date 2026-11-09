@@ -1,6 +1,7 @@
-/** The songs page's arrangement form, read into an arrangement for the api. */
-import type { NewArrangement } from './api_client';
-import { parseLength } from './plan_times';
+/** The song page's arrangement form, read into an arrangement for the api. */
+import type { ArrangementInput } from './api_client';
+import type { Arrangement } from './api_types';
+import { formatLength, parseLength } from './plan_times';
 import { isKeyName, normalizeKey } from './song_keys';
 
 export interface ArrangementFormFields {
@@ -12,14 +13,20 @@ export interface ArrangementFormFields {
   readonly length: string;
   readonly sequence: string;
   readonly chart: string;
+  // v0.2 songs and plans
+  /** The other keys the team plays it in, as typed: "A, Bb". */
+  readonly otherKeys: string;
+  readonly notes: string;
+  /** A link to a reference recording, or "". */
+  readonly audioUrl: string;
 }
 
 export type ArrangementFormErrors = Partial<
-  Record<'name' | 'key' | 'tempo' | 'meter' | 'length', string>
+  Record<'name' | 'key' | 'tempo' | 'meter' | 'length' | 'otherKeys' | 'audioUrl', string>
 >;
 
 export type ArrangementFormResult =
-  | { readonly ok: true; readonly arrangement: NewArrangement }
+  | { readonly ok: true; readonly arrangement: ArrangementInput }
   | { readonly ok: false; readonly errors: ArrangementFormErrors };
 
 const MIN_TEMPO = 20;
@@ -49,7 +56,15 @@ export function parseArrangementForm(fields: ArrangementFormFields): Arrangement
   if (lengthSeconds === null) {
     errors.length = 'Give a length such as 4:30, or minutes.';
   }
-  if (lengthSeconds === null || Object.keys(errors).length > 0) {
+  const otherKeys = parseKeyList(fields.otherKeys);
+  if (otherKeys === null) {
+    errors.otherKeys = 'Give keys such as A, Bb or F#m, separated by commas.';
+  }
+  const audioText = fields.audioUrl.trim();
+  if (audioText !== '' && recordingHref(audioText) === null) {
+    errors.audioUrl = 'Give a web link that starts with https://, or leave it blank.';
+  }
+  if (lengthSeconds === null || otherKeys === null || Object.keys(errors).length > 0) {
     return { ok: false, errors };
   }
   return {
@@ -62,6 +77,75 @@ export function parseArrangementForm(fields: ArrangementFormFields): Arrangement
       lengthSeconds,
       sequence: fields.sequence.trim(),
       chart: fields.chart,
+      keys: [key, ...otherKeys.filter((other) => other !== key)],
+      notes: fields.notes.trim(),
+      audioUrl: audioText === '' ? null : audioText,
     },
   };
+}
+
+// v0.2 songs and plans
+
+/** Reads "A, bb f#m" as ["A", "Bb", "F#m"], once each; null when one is no key. */
+function parseKeyList(text: string): string[] | null {
+  const keys = text
+    .split(/[\s,]+/)
+    .filter((part) => part !== '')
+    .map(normalizeKey);
+  return keys.every(isKeyName) ? [...new Set(keys)] : null;
+}
+
+/** The form's fields for editing `arrangement`, or for a new one when it is null. */
+export function arrangementFormFields(arrangement: Arrangement | null): ArrangementFormFields {
+  if (arrangement === null) {
+    return {
+      name: '',
+      key: '',
+      tempo: '',
+      meter: '4/4',
+      length: '',
+      sequence: '',
+      chart: '',
+      otherKeys: '',
+      notes: '',
+      audioUrl: '',
+    };
+  }
+  return {
+    name: arrangement.name,
+    key: arrangement.key,
+    tempo: String(arrangement.tempoBpm),
+    meter: arrangement.meter,
+    length: formatLength(arrangement.lengthSeconds),
+    sequence: arrangement.sequence,
+    chart: arrangement.chart,
+    otherKeys: arrangement.keys.filter((other) => other !== arrangement.key).join(', '),
+    notes: arrangement.notes,
+    audioUrl: arrangement.audioUrl ?? '',
+  };
+}
+
+/**
+ * The link to a recording, as an `href` that is safe to render: only an
+ * absolute http or https URL, never `javascript:` or `data:`; else null.
+ */
+export function recordingHref(url: string | null): string | null {
+  const text = url?.trim() ?? '';
+  if (!URL.canParse(text)) {
+    return null;
+  }
+  const parsed = new URL(text);
+  return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.href : null;
+}
+
+/** The keys in "A, bb, H" that are keys, as the form's preview offers them: ["A", "Bb"]. */
+export function typedKeys(text: string): string[] {
+  return [
+    ...new Set(
+      text
+        .split(/[\s,]+/)
+        .map(normalizeKey)
+        .filter(isKeyName),
+    ),
+  ];
 }

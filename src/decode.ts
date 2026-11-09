@@ -89,8 +89,8 @@ export function field<T>(
   return decode(record[key], `${path}.${key}`);
 }
 
-// v0.2 scheduling
-// The same helper as the songs and plans branch's (#8, #10), so a merge keeps one copy.
+// v0.2 songs and plans
+// v0.2 scheduling: the same helper, one copy.
 
 /**
  * Reads the field `key` of `record` with `decode`, or gives `fallback` when

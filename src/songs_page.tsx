@@ -2,145 +2,20 @@ import { useCallback, useState, type ReactElement } from 'react';
 
 import { api } from './api_client';
 import type { Song } from './api_types';
-import {
-  parseArrangementForm,
-  type ArrangementFormErrors,
-  type ArrangementFormFields,
-} from './arrangement_form';
-import { ActionNotice, Notice, TextField } from './form_fields';
+import { formatCalendarDate } from './calendar_date';
+import { ActionNotice, Notice, SelectField, TextField } from './form_fields';
 import { formatLength } from './plan_times';
+import { routeHref } from './routes';
+import { formatTimesUsed, parseTags } from './song_form';
 import { useAction } from './use_action';
+import { navigate } from './use_hash_route';
 import { useResource } from './use_resource';
 
-const BLANK_ARRANGEMENT: ArrangementFormFields = {
-  name: '',
-  key: '',
-  tempo: '',
-  meter: '4/4',
-  length: '',
-  sequence: '',
-  chart: '',
-};
-
-interface ArrangementFormProps {
-  readonly song: Song;
-  readonly onAdded: () => void;
-}
-
-function ArrangementForm({ song, onAdded }: ArrangementFormProps): ReactElement {
-  const [fields, setFields] = useState(BLANK_ARRANGEMENT);
-  const [errors, setErrors] = useState<ArrangementFormErrors>({});
-  const action = useAction();
-  const update = (change: Partial<ArrangementFormFields>): void => {
-    setFields({ ...fields, ...change });
-  };
-  return (
-    <form
-      noValidate
-      aria-label={`Add an arrangement of ${song.title}`}
-      onSubmit={(event) => {
-        event.preventDefault();
-        const result = parseArrangementForm(fields);
-        if (!result.ok) {
-          setErrors(result.errors);
-          return;
-        }
-        setErrors({});
-        void action
-          .run(async () => {
-            const arrangement = await api.createArrangement(song.id, result.arrangement);
-            return `Added the arrangement ${arrangement.name}.`;
-          })
-          .then((added) => {
-            if (added) {
-              setFields(BLANK_ARRANGEMENT);
-              onAdded();
-            }
-          });
-      }}
-    >
-      <div className="field-row">
-        <TextField
-          label="Name"
-          value={fields.name}
-          onChange={(name) => {
-            update({ name });
-          }}
-          error={errors.name}
-          hint="Such as Default, Acoustic or Christmas."
-          required
-        />
-        <TextField
-          label="Default key"
-          value={fields.key}
-          onChange={(key) => {
-            update({ key });
-          }}
-          error={errors.key}
-          hint="A service may play it in another key."
-          required
-        />
-      </div>
-      <div className="field-row">
-        <TextField
-          label="Tempo (BPM)"
-          value={fields.tempo}
-          onChange={(tempo) => {
-            update({ tempo });
-          }}
-          error={errors.tempo}
-          inputMode="numeric"
-          required
-        />
-        <TextField
-          label="Meter"
-          value={fields.meter}
-          onChange={(meter) => {
-            update({ meter });
-          }}
-          error={errors.meter}
-        />
-        <TextField
-          label="Length"
-          value={fields.length}
-          onChange={(length) => {
-            update({ length });
-          }}
-          error={errors.length}
-          hint="m:ss or minutes."
-          inputMode="numeric"
-          required
-        />
-      </div>
-      <TextField
-        label="Sequence"
-        value={fields.sequence}
-        onChange={(sequence) => {
-          update({ sequence });
-        }}
-        hint="Such as V1 C V2 C B C."
-      />
-      <TextField
-        label="Chart"
-        value={fields.chart}
-        onChange={(chart) => {
-          update({ chart });
-        }}
-        hint="Chords over lyrics, as text."
-        multiline
-      />
-      <button type="submit" disabled={action.busy}>
-        Add arrangement
-      </button>
-      <ActionNotice message={action.message} />
-    </form>
-  );
-}
-
-function NewSongForm({ onAdded }: { readonly onAdded: () => void }): ReactElement {
+function NewSongForm(): ReactElement {
   const [title, setTitle] = useState('');
   const [authors, setAuthors] = useState('');
   const [ccli, setCcli] = useState('');
+  const [tags, setTags] = useState('');
   const [error, setError] = useState<string | undefined>(undefined);
   const action = useAction();
   return (
@@ -155,23 +30,16 @@ function NewSongForm({ onAdded }: { readonly onAdded: () => void }): ReactElemen
           return;
         }
         setError(undefined);
-        void action
-          .run(async () => {
-            const song = await api.createSong({
-              title: title.trim(),
-              authors: authors.trim(),
-              ccli: ccli.trim() === '' ? null : ccli.trim(),
-            });
-            return `Added ${song.title}. Add an arrangement so a service can play it.`;
-          })
-          .then((added) => {
-            if (added) {
-              setTitle('');
-              setAuthors('');
-              setCcli('');
-              onAdded();
-            }
+        void action.run(async () => {
+          const song = await api.createSong({
+            title: title.trim(),
+            authors: authors.trim(),
+            ccli: ccli.trim() === '' ? null : ccli.trim(),
+            tags: parseTags(tags),
           });
+          navigate({ page: 'song', songId: song.id });
+          return `Added ${song.title}.`;
+        });
       }}
     >
       <h2 id="new-song-heading">New song</h2>
@@ -180,6 +48,12 @@ function NewSongForm({ onAdded }: { readonly onAdded: () => void }): ReactElemen
         <TextField label="Authors" value={authors} onChange={setAuthors} />
         <TextField label="CCLI number" value={ccli} onChange={setCcli} inputMode="numeric" />
       </div>
+      <TextField
+        label="Tags"
+        value={tags}
+        onChange={setTags}
+        hint="Separated by commas, such as hymn, advent, fast."
+      />
       <button type="submit" disabled={action.busy}>
         Add song
       </button>
@@ -188,63 +62,128 @@ function NewSongForm({ onAdded }: { readonly onAdded: () => void }): ReactElemen
   );
 }
 
-/** The church's songs, each with the arrangements it plays them in. */
+/** Every tag the songs have, once each, in alphabetical order. */
+function tagsOf(songs: readonly Song[]): string[] {
+  return [...new Set(songs.flatMap((song) => song.tags))].sort((a, b) => a.localeCompare(b));
+}
+
+function SongCard({ song }: { readonly song: Song }): ReactElement {
+  return (
+    <li className="card">
+      <div className="card-head">
+        <h3>
+          <a href={routeHref({ page: 'song', songId: song.id })}>{song.title}</a>
+        </h3>
+        <span className="muted">
+          {song.authors}
+          {song.ccli === null ? '' : ` · CCLI ${song.ccli}`}
+        </span>
+      </div>
+      {song.tags.length === 0 ? null : (
+        <ul className="chip-list tags" aria-label="Tags">
+          {song.tags.map((tag) => (
+            <li key={tag} className="chip">
+              {tag}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="song-use">
+        <span>
+          {song.lastScheduledOn === null
+            ? 'Never scheduled'
+            : `Last scheduled ${formatCalendarDate(song.lastScheduledOn)}`}
+        </span>
+        <span>
+          Played {formatTimesUsed(song.timesUsed12Months).toLowerCase()} in the last 12 months
+        </span>
+      </p>
+      {song.arrangements.length === 0 ? (
+        <p>No arrangements yet: a service needs one to play this song.</p>
+      ) : (
+        <ul className="arrangement-list">
+          {song.arrangements.map((arrangement) => (
+            <li key={arrangement.id}>
+              {`${arrangement.name}: ${arrangement.keys.join(', ')} · ${String(arrangement.tempoBpm)} BPM, ${arrangement.meter} · ${formatLength(arrangement.lengthSeconds)}`}
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+function foundText(count: number): string {
+  return count === 1 ? '1 song found.' : `${String(count)} songs found.`;
+}
+
+/** The church's songs, found by tag and by words, each linking to its arrangements and charts. */
 export function SongsPage(): ReactElement {
-  const load = useCallback((signal: AbortSignal) => api.listSongs(signal), []);
-  const [songs, reload] = useResource(load);
+  const [query, setQuery] = useState('');
+  const [tag, setTag] = useState('');
+  const filtering = tag !== '' || query.trim() !== '';
+  const loadAll = useCallback((signal: AbortSignal) => api.listSongs(signal), []);
+  const loadFound = useCallback(
+    (signal: AbortSignal) =>
+      tag === '' && query.trim() === ''
+        ? Promise.resolve(null)
+        : api.findSongs({ tag: tag === '' ? null : tag, query }, signal),
+    [tag, query],
+  );
+  const [all] = useResource(loadAll);
+  const [found] = useResource(loadFound);
+  const shown = filtering ? found : all;
+  const songs = shown.status === 'ready' ? shown.value : null;
+  const tags = all.status === 'ready' ? tagsOf(all.value) : [];
+
   return (
     <>
       <h1>Songs</h1>
-      <NewSongForm onAdded={reload} />
+      <p>
+        <a href={routeHref({ page: 'song_usage' })}>Song usage report</a>, for CCLI.
+      </p>
+      <NewSongForm />
       <section aria-labelledby="songs-heading">
         <h2 id="songs-heading">All songs</h2>
-        {songs.status === 'loading' ? <p>Loading songs…</p> : null}
-        {songs.status === 'failed' ? <Notice message={songs.error} tone="error" /> : null}
-        {songs.status === 'ready' && songs.value.length === 0 ? (
+        <form
+          role="search"
+          aria-label="Find songs"
+          className="field-row"
+          onSubmit={(event) => {
+            event.preventDefault();
+          }}
+        >
+          <TextField label="Search" value={query} onChange={setQuery} hint="Title or authors." />
+          <SelectField label="Tag" value={tag} onChange={setTag}>
+            <option value="">Every tag</option>
+            {tags.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </SelectField>
+        </form>
+        {shown.status === 'loading' ? <p>Loading songs…</p> : null}
+        {shown.status === 'failed' ? <Notice message={shown.error} tone="error" /> : null}
+        <Notice
+          message={
+            !filtering || songs === null
+              ? null
+              : songs.length === 0
+                ? 'No songs match. Try fewer words or every tag.'
+                : foundText(songs.length)
+          }
+        />
+        {!filtering && songs !== null && songs.length === 0 ? (
           <p>No songs yet. Add the first one above.</p>
         ) : null}
-        {songs.status === 'ready' ? (
-          <ul className="card-list">
-            {songs.value.map((song) => (
-              <li key={song.id} className="card">
-                <div className="card-head">
-                  <h3>{song.title}</h3>
-                  <span className="muted">
-                    {song.authors}
-                    {song.ccli === null ? '' : ` · CCLI ${song.ccli}`}
-                  </span>
-                </div>
-                {song.arrangements.length === 0 ? (
-                  <p>No arrangements yet: a service needs one to play this song.</p>
-                ) : (
-                  <ul className="arrangement-list">
-                    {song.arrangements.map((arrangement) => (
-                      <li key={arrangement.id}>
-                        <strong>{arrangement.name}</strong>
-                        <span>Key {arrangement.key}</span>
-                        <span>
-                          {String(arrangement.tempoBpm)} BPM, {arrangement.meter}
-                        </span>
-                        <span>{formatLength(arrangement.lengthSeconds)}</span>
-                        {arrangement.sequence === '' ? null : <span>{arrangement.sequence}</span>}
-                        {arrangement.chart === '' ? null : (
-                          <details>
-                            <summary>Chart</summary>
-                            <pre className="chart">{arrangement.chart}</pre>
-                          </details>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <details>
-                  <summary>Add an arrangement</summary>
-                  <ArrangementForm song={song} onAdded={reload} />
-                </details>
-              </li>
+        {songs === null || songs.length === 0 ? null : (
+          <ul className="card-list" aria-label="Songs found">
+            {songs.map((song) => (
+              <SongCard key={song.id} song={song} />
             ))}
           </ul>
-        ) : null}
+        )}
       </section>
     </>
   );

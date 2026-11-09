@@ -9,9 +9,9 @@ import {
   decodeObject,
   decodeString,
   field,
+  fieldOr,
   nullable,
   oneOf,
-  fieldOr,
 } from './decode';
 
 export interface Person {
@@ -45,7 +45,14 @@ export interface Arrangement {
   readonly meter: string;
   readonly lengthSeconds: number;
   readonly sequence: string;
+  /** ChordPro, written in the default key. */
   readonly chart: string;
+  // v0.2 songs and plans
+  /** The keys the team plays it in, the default key first. */
+  readonly keys: readonly string[];
+  readonly notes: string;
+  /** A link to a reference recording. */
+  readonly audioUrl: string | null;
 }
 
 export interface Song {
@@ -54,6 +61,11 @@ export interface Song {
   readonly authors: string;
   readonly ccli: string | null;
   readonly arrangements: readonly Arrangement[];
+  // v0.2 songs and plans
+  readonly tags: readonly string[];
+  /** "YYYY-MM-DD", or null when no service has played it. */
+  readonly lastScheduledOn: string | null;
+  readonly timesUsed12Months: number;
 }
 
 export const ITEM_KINDS = [
@@ -96,6 +108,10 @@ export interface Item {
   readonly lowerThird: string | null;
   readonly offStream: boolean;
   readonly notes: string;
+  // v0.2 songs and plans
+  /** Who leads the song; songs only. */
+  readonly songLeader: Person | null;
+  readonly teamNotes: readonly TeamNote[];
 }
 
 export const REQUEST_STATUSES = ['pending', 'accepted', 'declined', 'cancelled'] as const;
@@ -133,6 +149,11 @@ export interface Service {
   readonly items: readonly Item[];
   readonly endsAt: string;
   readonly requests: readonly ScheduleRequest[];
+  // v0.2 songs and plans
+  readonly serviceTypeId: number | null;
+  readonly series: string;
+  /** Rehearsals and the service itself, by start. */
+  readonly times: readonly PlanTime[];
   // v0.2 scheduling
   /** The positions the plan needs filled, with how far each is filled. */
   readonly needed: readonly Need[];
@@ -145,6 +166,9 @@ export interface ServiceSummary {
   readonly startsAt: string;
   readonly endsAt: string;
   readonly itemCount: number;
+  // v0.2 songs and plans
+  readonly serviceTypeId: number | null;
+  readonly series: string;
 }
 
 export interface Blockout {
@@ -215,16 +239,22 @@ export function decodeTeam(value: unknown, path: string): Team {
 
 export function decodeArrangement(value: unknown, path: string): Arrangement {
   const o = decodeObject(value, path);
+  const key = field(o, 'key', decodeString, path);
   return {
     id: field(o, 'id', decodeInteger, path),
     songId: field(o, 'song_id', decodeInteger, path),
     name: field(o, 'name', decodeString, path),
-    key: field(o, 'key', decodeString, path),
+    key,
     tempoBpm: field(o, 'tempo_bpm', decodeInteger, path),
     meter: field(o, 'meter', decodeString, path),
     lengthSeconds: field(o, 'length_seconds', decodeInteger, path),
     sequence: field(o, 'sequence', decodeString, path),
     chart: field(o, 'chart', decodeString, path),
+    // v0.2 songs and plans: new in the contract, so read leniently. Missing,
+    // the keys are the default key alone, there are no notes and no recording.
+    keys: fieldOr(o, 'keys', arrayOf(decodeString), [key], path),
+    notes: fieldOr(o, 'notes', decodeString, '', path),
+    audioUrl: fieldOr(o, 'audio_url', decodeNullableString, null, path),
   };
 }
 
@@ -236,6 +266,11 @@ export function decodeSong(value: unknown, path: string): Song {
     authors: field(o, 'authors', decodeString, path),
     ccli: field(o, 'ccli', decodeNullableString, path),
     arrangements: field(o, 'arrangements', arrayOf(decodeArrangement), path),
+    // v0.2 songs and plans: new in the contract, so read leniently. Missing,
+    // the song has no tags and has never been scheduled.
+    tags: fieldOr(o, 'tags', arrayOf(decodeString), [], path),
+    lastScheduledOn: fieldOr(o, 'last_scheduled_on', decodeNullableString, null, path),
+    timesUsed12Months: fieldOr(o, 'times_used_12_months', decodeInteger, 0, path),
   };
 }
 
@@ -269,6 +304,10 @@ export function decodeItem(value: unknown, path: string): Item {
     lowerThird: field(o, 'lower_third', decodeNullableString, path),
     offStream: field(o, 'off_stream', decodeBoolean, path),
     notes: field(o, 'notes', decodeString, path),
+    // v0.2 songs and plans: new in the contract, so read leniently. Missing,
+    // nobody leads the song and no team has a note.
+    songLeader: fieldOr(o, 'song_leader', nullable(decodePerson), null, path),
+    teamNotes: fieldOr(o, 'team_notes', arrayOf(decodeTeamNote), [], path),
   };
 }
 
@@ -304,6 +343,11 @@ export function decodeService(value: unknown, path: string): Service {
     items: field(o, 'items', arrayOf(decodeItem), path),
     endsAt: field(o, 'ends_at', decodeString, path),
     requests: field(o, 'requests', arrayOf(decodeScheduleRequest), path),
+    // v0.2 songs and plans: new in the contract, so read leniently. Missing,
+    // the plan has no type, no series and no times but its own (planTimes).
+    serviceTypeId: fieldOr(o, 'service_type_id', nullable(decodeInteger), null, path),
+    series: fieldOr(o, 'series', decodeString, '', path),
+    times: fieldOr(o, 'times', arrayOf(decodePlanTime), [], path),
     // v0.2 scheduling: new in v0.2, so an older api's missing field reads as none needed.
     needed: fieldOr(o, 'needed', arrayOf(decodeNeed), [], path),
   };
@@ -318,6 +362,9 @@ export function decodeServiceSummary(value: unknown, path: string): ServiceSumma
     startsAt: field(o, 'starts_at', decodeString, path),
     endsAt: field(o, 'ends_at', decodeString, path),
     itemCount: field(o, 'item_count', decodeInteger, path),
+    // v0.2 songs and plans: new in the contract, so read leniently.
+    serviceTypeId: fieldOr(o, 'service_type_id', nullable(decodeInteger), null, path),
+    series: fieldOr(o, 'series', decodeString, '', path),
   };
 }
 
@@ -396,8 +443,8 @@ export interface Conflict {
  */
 export interface Candidate {
   readonly person: Person;
+  /** Only whether they are blocked out: the reason stays the person's. */
   readonly blocked: boolean;
-  /** Shown to the scheduler only; "" when the person gave none. */
   readonly alsoAsked: readonly AlsoAsked[];
   readonly conflicts: readonly Conflict[];
   /** Whether the person declined a request at this plan. */
@@ -451,5 +498,135 @@ export function decodeCandidate(value: unknown, path: string): Candidate {
     declinedHere: field(o, 'declined_here', decodeBoolean, path),
     lastServedOn: field(o, 'last_served_on', decodeNullableString, path),
     timesServed90Days: field(o, 'times_served_90_days', decodeInteger, path),
+  };
+}
+
+// v0.2 songs and plans
+
+/** A note on an item for one team: what the band, the vocals or the stream should know. */
+export interface TeamNote {
+  readonly teamId: number;
+  readonly teamName: string;
+  readonly note: string;
+}
+
+export const PLAN_TIME_KINDS = ['rehearsal', 'service'] as const;
+
+export type PlanTimeKind = (typeof PLAN_TIME_KINDS)[number];
+
+/** When the teams meet: a rehearsal, or the service itself (id 0, read only). */
+export interface PlanTime {
+  readonly id: number;
+  readonly kind: PlanTimeKind;
+  readonly name: string;
+  readonly startsAt: string;
+  readonly endsAt: string;
+}
+
+/** An item of a service type's template: what a new plan of that type starts with. */
+export interface TemplateItem {
+  readonly kind: ItemKind;
+  readonly title: string;
+  readonly lengthSeconds: number;
+  readonly arrangementId: number | null;
+  readonly key: string | null;
+}
+
+export interface NeededPosition {
+  readonly positionId: number;
+  readonly count: number;
+}
+
+export interface ServiceTemplate {
+  readonly items: readonly TemplateItem[];
+  readonly needed: readonly NeededPosition[];
+}
+
+/** A recurring kind of gathering, with its usual start, rehearsal and order. */
+export interface ServiceType {
+  readonly id: number;
+  readonly name: string;
+  /** "HH:MM", Dutch time. */
+  readonly startTime: string;
+  /** How long before the start the teams rehearse; null for no rehearsal. */
+  readonly rehearsalOffsetMinutes: number | null;
+  readonly template: ServiceTemplate;
+}
+
+/** How often a song was played in a date range, for the CCLI report. */
+export interface SongUsage {
+  readonly songId: number;
+  readonly title: string;
+  readonly authors: string;
+  readonly ccli: string | null;
+  readonly count: number;
+}
+
+function decodeTeamNote(value: unknown, path: string): TeamNote {
+  const o = decodeObject(value, path);
+  return {
+    teamId: field(o, 'team_id', decodeInteger, path),
+    teamName: field(o, 'team_name', decodeString, path),
+    note: field(o, 'note', decodeString, path),
+  };
+}
+
+export function decodePlanTime(value: unknown, path: string): PlanTime {
+  const o = decodeObject(value, path);
+  return {
+    id: field(o, 'id', decodeInteger, path),
+    kind: field(o, 'kind', oneOf(PLAN_TIME_KINDS), path),
+    name: field(o, 'name', decodeString, path),
+    startsAt: field(o, 'starts_at', decodeString, path),
+    endsAt: field(o, 'ends_at', decodeString, path),
+  };
+}
+
+function decodeTemplateItem(value: unknown, path: string): TemplateItem {
+  const o = decodeObject(value, path);
+  return {
+    kind: field(o, 'kind', oneOf(ITEM_KINDS), path),
+    title: field(o, 'title', decodeString, path),
+    lengthSeconds: field(o, 'length_seconds', decodeInteger, path),
+    arrangementId: field(o, 'arrangement_id', nullable(decodeInteger), path),
+    key: field(o, 'key', decodeNullableString, path),
+  };
+}
+
+function decodeNeededPosition(value: unknown, path: string): NeededPosition {
+  const o = decodeObject(value, path);
+  return {
+    positionId: field(o, 'position_id', decodeInteger, path),
+    count: field(o, 'count', decodeInteger, path),
+  };
+}
+
+function decodeServiceTemplate(value: unknown, path: string): ServiceTemplate {
+  const o = decodeObject(value, path);
+  return {
+    items: field(o, 'items', arrayOf(decodeTemplateItem), path),
+    needed: field(o, 'needed', arrayOf(decodeNeededPosition), path),
+  };
+}
+
+export function decodeServiceType(value: unknown, path: string): ServiceType {
+  const o = decodeObject(value, path);
+  return {
+    id: field(o, 'id', decodeInteger, path),
+    name: field(o, 'name', decodeString, path),
+    startTime: field(o, 'start_time', decodeString, path),
+    rehearsalOffsetMinutes: field(o, 'rehearsal_offset_minutes', nullable(decodeInteger), path),
+    template: field(o, 'template', decodeServiceTemplate, path),
+  };
+}
+
+export function decodeSongUsage(value: unknown, path: string): SongUsage {
+  const o = decodeObject(value, path);
+  return {
+    songId: field(o, 'song_id', decodeInteger, path),
+    title: field(o, 'title', decodeString, path),
+    authors: field(o, 'authors', decodeString, path),
+    ccli: field(o, 'ccli', decodeNullableString, path),
+    count: field(o, 'count', decodeInteger, path),
   };
 }

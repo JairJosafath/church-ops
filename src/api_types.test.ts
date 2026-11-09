@@ -3,27 +3,35 @@ import { describe, expect, it } from 'vitest';
 import {
   decodeBlockout,
   decodeCandidate,
-  decodePosition,
+  decodeItem,
   decodeLiveState,
+  decodePosition,
   decodeScheduleRequest,
   decodeService,
   decodeServiceSummary,
+  decodeServiceType,
   decodeSong,
+  decodeSongUsage,
   decodeTeam,
 } from './api_types';
 import { DecodeError } from './decode';
 import {
+  arrangementJson,
   blockoutJson,
   candidateJson,
   itemJson,
   liveJson,
   needJson,
+  personJson,
+  planTimeJson,
   positionJson,
   requestJson,
   serviceJson,
   serviceSummaryJson,
+  serviceTypeJson,
   songItemJson,
   songJson,
+  songUsageJson,
   teamJson,
 } from './test_fixtures';
 
@@ -87,6 +95,9 @@ describe('the other records', () => {
       lengthSeconds: 300,
       sequence: 'V1 C V2 C B C',
       chart: '[G]Amazing grace',
+      keys: ['G'],
+      notes: '',
+      audioUrl: null,
     });
   });
 
@@ -131,6 +142,151 @@ describe('the other records', () => {
         'live',
       ),
     ).toThrow('live.devices.obs: expected one of ok, unreachable, unconfigured, unknown');
+  });
+});
+
+// v0.2 songs and plans
+
+describe('the fields new in v0.2', () => {
+  it('reads a song with its tags, its last use and its arrangements’ keys, notes and recording', () => {
+    const song = decodeSong(
+      songJson({
+        tags: ['hymn', 'grace'],
+        last_scheduled_on: '2026-11-01',
+        times_used_12_months: 6,
+        arrangements: [
+          arrangementJson({
+            keys: ['G', 'A', 'Bb'],
+            notes: 'Capo 2 for the acoustic',
+            audio_url: 'https://example.org/grace.mp3',
+          }),
+        ],
+      }),
+      'song',
+    );
+    expect(song).toMatchObject({
+      tags: ['hymn', 'grace'],
+      lastScheduledOn: '2026-11-01',
+      timesUsed12Months: 6,
+    });
+    expect(song.arrangements[0]).toMatchObject({
+      keys: ['G', 'A', 'Bb'],
+      notes: 'Capo 2 for the acoustic',
+      audioUrl: 'https://example.org/grace.mp3',
+    });
+  });
+
+  it('reads a v0.1 song, without them, as untagged, never scheduled, in its default key alone', () => {
+    const song = decodeSong(songJson(), 'song');
+    expect(song).toMatchObject({ tags: [], lastScheduledOn: null, timesUsed12Months: 0 });
+    expect(song.arrangements[0]?.keys).toEqual(['G']);
+  });
+
+  it('reads an item with its song leader and team notes, or without them', () => {
+    expect(
+      decodeItem(
+        songItemJson({
+          song_leader: personJson({ id: 2, name: 'Ben Bakker' }),
+          team_notes: [{ team_id: 5, team_name: 'Worship band', note: 'Keys alone' }],
+        }),
+        'item',
+      ),
+    ).toMatchObject({
+      songLeader: { id: 2, name: 'Ben Bakker' },
+      teamNotes: [{ teamId: 5, teamName: 'Worship band', note: 'Keys alone' }],
+    });
+    expect(decodeItem(itemJson(), 'item')).toMatchObject({ songLeader: null, teamNotes: [] });
+  });
+
+  it('reads a service with its type, series and times, or without them', () => {
+    expect(
+      decodeService(
+        serviceJson({
+          service_type_id: 4,
+          series: 'Advent',
+          times: [
+            planTimeJson(),
+            planTimeJson({
+              id: 0,
+              kind: 'service',
+              name: 'Service',
+              starts_at: '2026-11-15T10:00:00+01:00',
+            }),
+          ],
+        }),
+        'service',
+      ),
+    ).toMatchObject({
+      serviceTypeId: 4,
+      series: 'Advent',
+      times: [
+        { id: 31, kind: 'rehearsal' },
+        { id: 0, kind: 'service' },
+      ],
+    });
+    expect(decodeService(serviceJson(), 'service')).toMatchObject({
+      serviceTypeId: null,
+      series: '',
+      times: [],
+    });
+    expect(
+      decodeServiceSummary(serviceSummaryJson({ service_type_id: 4, series: 'Advent' }), 's'),
+    ).toMatchObject({ serviceTypeId: 4, series: 'Advent' });
+    expect(decodeServiceSummary(serviceSummaryJson(), 's')).toMatchObject({
+      serviceTypeId: null,
+      series: '',
+    });
+  });
+
+  it.each([
+    { json: songJson({ tags: 'hymn' }), path: 'song.tags' },
+    { json: songJson({ times_used_12_months: '6' }), path: 'song.times_used_12_months' },
+    {
+      json: songJson({ arrangements: [arrangementJson({ keys: null })] }),
+      path: 'song.arrangements[0].keys',
+    },
+  ])('still refuses a new field of the wrong shape at $path', ({ json, path }) => {
+    expect(() => decodeSong(json, 'song')).toThrow(`${path}: expected`);
+  });
+
+  it('refuses a plan time of a kind the contract does not name', () => {
+    expect(() =>
+      decodeService(serviceJson({ times: [planTimeJson({ kind: 'party' })] }), 's'),
+    ).toThrow('s.times[0].kind: expected one of rehearsal, service');
+  });
+});
+
+describe('the records new in v0.2', () => {
+  it('reads a service type with its template', () => {
+    expect(decodeServiceType(serviceTypeJson(), 'type')).toEqual({
+      id: 4,
+      name: 'Sunday morning',
+      startTime: '10:00',
+      rehearsalOffsetMinutes: 90,
+      template: {
+        items: [
+          { kind: 'header', title: 'Worship', lengthSeconds: 0, arrangementId: null, key: null },
+          { kind: 'sermon', title: 'Sermon', lengthSeconds: 1800, arrangementId: null, key: null },
+        ],
+        needed: [{ positionId: 10, count: 1 }],
+      },
+    });
+  });
+
+  it('refuses a service type without its template', () => {
+    expect(() => decodeServiceType(serviceTypeJson({ template: null }), 'type')).toThrow(
+      'type.template: expected an object',
+    );
+  });
+
+  it('reads a song’s usage', () => {
+    expect(decodeSongUsage(songUsageJson({ ccli: null }), 'usage')).toEqual({
+      songId: 3,
+      title: 'Amazing Grace',
+      authors: 'John Newton',
+      ccli: null,
+      count: 4,
+    });
   });
 });
 

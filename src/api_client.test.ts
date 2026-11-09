@@ -9,16 +9,20 @@ import {
 } from './api_client';
 import { DecodeError } from './decode';
 import {
+  arrangementJson,
   blockoutJson,
   candidateJson,
   itemJson,
   liveJson,
   personJson,
+  planTimeJson,
   positionJson,
   requestJson,
   serviceJson,
   serviceSummaryJson,
+  serviceTypeJson,
   songJson,
+  songUsageJson,
   teamJson,
 } from './test_fixtures';
 
@@ -53,6 +57,8 @@ const SONG_ITEM: ItemInput = {
   lowerThird: null,
   offStream: false,
   notes: '',
+  songLeaderId: null,
+  teamNotes: [],
 };
 
 const READING_ITEM: ItemInput = {
@@ -97,7 +103,7 @@ describe('the requests the client sends', () => {
     {
       name: 'createSong without CCLI',
       answer: songJson(),
-      run: (client) => client.createSong({ title: 'Psalm 121', authors: '', ccli: null }),
+      run: (client) => client.createSong({ title: 'Psalm 121', authors: '', ccli: null, tags: [] }),
       want: { url: '/api/songs', method: 'POST', body: { title: 'Psalm 121', authors: '' } },
     },
     {
@@ -146,7 +152,6 @@ describe('the requests the client sends', () => {
           arrangement_id: 7,
           key: 'Bb',
           off_stream: false,
-          notes: '',
         },
       },
     },
@@ -162,7 +167,6 @@ describe('the requests the client sends', () => {
           title: 'Psalm 23',
           length_seconds: 300,
           off_stream: false,
-          notes: '',
         },
       },
     },
@@ -183,8 +187,249 @@ describe('the requests the client sends', () => {
           lower_third: null,
           off_stream: false,
           notes: '',
+          team_notes: [],
+          song_leader_id: null,
         },
       },
+    },
+    // v0.2 songs and plans
+    {
+      name: 'createItem for a song with its leader and notes',
+      answer: itemJson(),
+      run: (client) =>
+        client.createItem(20, {
+          ...SONG_ITEM,
+          notes: 'Slow intro',
+          songLeaderId: 2,
+          teamNotes: [
+            { teamId: 5, note: 'Keys alone' },
+            { teamId: 6, note: '' },
+          ],
+        }),
+      want: {
+        url: '/api/services/20/items',
+        method: 'POST',
+        body: {
+          kind: 'song',
+          title: 'Amazing Grace',
+          length_seconds: 300,
+          arrangement_id: 7,
+          key: 'Bb',
+          off_stream: false,
+          notes: 'Slow intro',
+          team_notes: [{ team_id: 5, note: 'Keys alone' }],
+          song_leader_id: 2,
+        },
+      },
+    },
+    {
+      name: 'updateItem of a reading, removing a team note, with no song leader',
+      answer: itemJson(),
+      run: (client) =>
+        client.updateItem(20, 100, {
+          ...READING_ITEM,
+          songLeaderId: 2,
+          teamNotes: [{ teamId: 5, note: '' }],
+        }),
+      want: {
+        url: '/api/services/20/items/100',
+        method: 'PATCH',
+        body: {
+          kind: 'reading',
+          title: 'Psalm 23',
+          length_seconds: 300,
+          arrangement_id: null,
+          key: null,
+          scene: null,
+          lower_third: null,
+          off_stream: false,
+          notes: '',
+          team_notes: [{ team_id: 5, note: '' }],
+        },
+      },
+    },
+    {
+      name: 'getSong',
+      answer: songJson(),
+      run: (client) => client.getSong(3),
+      want: { url: '/api/songs/3', method: 'GET', body: undefined },
+    },
+    {
+      name: 'findSongs with every filter',
+      answer: [songJson()],
+      run: (client) => client.findSongs({ tag: 'Advent & Christmas', query: ' grace ' }),
+      want: {
+        url: '/api/songs?tag=Advent+%26+Christmas&q=grace',
+        method: 'GET',
+        body: undefined,
+      },
+    },
+    {
+      name: 'findSongs without a filter',
+      answer: [songJson()],
+      run: (client) => client.findSongs({ tag: null, query: '  ' }),
+      want: { url: '/api/songs', method: 'GET', body: undefined },
+    },
+    {
+      name: 'updateSong',
+      answer: songJson(),
+      run: (client) =>
+        client.updateSong(3, {
+          title: 'Amazing Grace',
+          authors: 'John Newton',
+          ccli: null,
+          tags: ['hymn', 'grace'],
+        }),
+      want: {
+        url: '/api/songs/3',
+        method: 'PATCH',
+        body: {
+          title: 'Amazing Grace',
+          authors: 'John Newton',
+          ccli: null,
+          tags: ['hymn', 'grace'],
+        },
+      },
+    },
+    {
+      name: 'updateArrangement',
+      answer: arrangementJson(),
+      run: (client) =>
+        client.updateArrangement(3, 7, {
+          name: 'Default',
+          key: 'G',
+          tempoBpm: 72,
+          meter: '3/4',
+          lengthSeconds: 300,
+          sequence: 'V1 C',
+          chart: '[G]Amazing',
+          keys: ['G', 'A'],
+          notes: 'Capo 2',
+          audioUrl: 'https://example.org/grace.mp3',
+        }),
+      want: {
+        url: '/api/songs/3/arrangements/7',
+        method: 'PATCH',
+        body: {
+          name: 'Default',
+          key: 'G',
+          tempo_bpm: 72,
+          meter: '3/4',
+          length_seconds: 300,
+          sequence: 'V1 C',
+          chart: '[G]Amazing',
+          keys: ['G', 'A'],
+          notes: 'Capo 2',
+          audio_url: 'https://example.org/grace.mp3',
+        },
+      },
+    },
+    {
+      name: 'songUsage',
+      answer: [songUsageJson()],
+      run: (client) => client.songUsage('2026-01-01', '2026-06-30'),
+      want: {
+        url: '/api/reports/song-usage?from=2026-01-01&to=2026-06-30',
+        method: 'GET',
+        body: undefined,
+      },
+    },
+    {
+      name: 'listServiceTypes',
+      answer: [serviceTypeJson()],
+      run: (client) => client.listServiceTypes(),
+      want: { url: '/api/service-types', method: 'GET', body: undefined },
+    },
+    {
+      name: 'createServiceType',
+      answer: serviceTypeJson(),
+      run: (client) =>
+        client.createServiceType({
+          name: 'Youth evening',
+          startTime: '19:30',
+          rehearsalOffsetMinutes: null,
+        }),
+      want: {
+        url: '/api/service-types',
+        method: 'POST',
+        body: { name: 'Youth evening', start_time: '19:30', rehearsal_offset_minutes: null },
+      },
+    },
+    {
+      name: 'updateServiceType',
+      answer: serviceTypeJson(),
+      run: (client) =>
+        client.updateServiceType(4, {
+          name: 'Sunday morning',
+          startTime: '09:30',
+          rehearsalOffsetMinutes: 90,
+        }),
+      want: {
+        url: '/api/service-types/4',
+        method: 'PATCH',
+        body: { name: 'Sunday morning', start_time: '09:30', rehearsal_offset_minutes: 90 },
+      },
+    },
+    {
+      name: 'saveTemplateFromService',
+      answer: serviceTypeJson(),
+      run: (client) => client.saveTemplateFromService(4, 20),
+      want: {
+        url: '/api/service-types/4/template/from-service',
+        method: 'POST',
+        body: { service_id: 20 },
+      },
+    },
+    {
+      name: 'createServiceOfType',
+      answer: serviceJson(),
+      run: (client) =>
+        client.createServiceOfType({
+          serviceTypeId: 4,
+          serviceTypeName: 'Sunday morning',
+          title: 'Advent 1',
+          date: '2026-11-29',
+          series: 'Advent',
+          streamed: true,
+        }),
+      want: {
+        url: '/api/services',
+        method: 'POST',
+        body: {
+          title: 'Advent 1',
+          service_type: 'Sunday morning',
+          service_type_id: 4,
+          date: '2026-11-29',
+          series: 'Advent',
+          streamed: true,
+        },
+      },
+    },
+    {
+      name: 'addRehearsal',
+      answer: planTimeJson(),
+      run: (client) =>
+        client.addRehearsal(20, {
+          name: 'Band rehearsal',
+          startsAt: '2026-11-12T19:30:00+01:00',
+          endsAt: '2026-11-12T21:30:00+01:00',
+        }),
+      want: {
+        url: '/api/services/20/times',
+        method: 'POST',
+        body: {
+          kind: 'rehearsal',
+          name: 'Band rehearsal',
+          starts_at: '2026-11-12T19:30:00+01:00',
+          ends_at: '2026-11-12T21:30:00+01:00',
+        },
+      },
+    },
+    {
+      name: 'removeTime',
+      answer: undefined,
+      run: (client) => client.removeTime(20, 31),
+      want: { url: '/api/services/20/times/31', method: 'DELETE', body: undefined },
     },
     {
       name: 'deleteItem',

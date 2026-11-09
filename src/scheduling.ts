@@ -1,8 +1,8 @@
 /**
  * Scheduling the team from the plan. A request is an invitation: the
- * scheduler sees each warning (a blockout and its reason, another request the
- * same day or at the same plan, a decline here) and may still ask; the person
- * answers, and only an accepted request schedules them.
+ * scheduler sees each warning (a blockout, never its reason; another request
+ * the same day or at the same plan; a decline here) and may still ask; the
+ * person answers, and only an accepted request schedules them.
  */
 import type {
   Candidate,

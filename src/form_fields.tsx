@@ -39,6 +39,8 @@ interface TextFieldProps extends FieldText {
   readonly type?: 'text' | 'email' | 'date' | 'datetime-local';
   readonly required?: boolean;
   readonly multiline?: boolean;
+  /** How many lines a multiline field shows; 4 when not given. */
+  readonly rows?: number;
   readonly inputMode?: 'text' | 'numeric' | 'decimal';
   readonly autoComplete?: string;
 }
@@ -58,7 +60,7 @@ export function TextField(props: TextFieldProps): ReactElement {
       {props.multiline === true ? (
         <textarea
           {...common}
-          rows={4}
+          rows={props.rows ?? 4}
           onChange={(event) => {
             props.onChange(event.target.value);
           }}

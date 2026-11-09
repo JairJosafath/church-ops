@@ -6,6 +6,11 @@ export type Route =
   | { readonly page: 'songs' }
   | { readonly page: 'people' }
   | { readonly page: 'me' }
+  // v0.2 songs and plans
+  | { readonly page: 'song'; readonly songId: number }
+  | { readonly page: 'rehearse'; readonly serviceId: number }
+  | { readonly page: 'song_usage' }
+  | { readonly page: 'service_types' }
   // v0.2 scheduling
   | { readonly page: 'matrix' }
   | { readonly page: 'service_teams'; readonly serviceId: number }
@@ -34,6 +39,11 @@ export function parseRoute(hash: string): Route {
     case '/matrix':
       return { page: 'matrix' };
     default: {
+      // v0.2 songs and plans
+      const songsAndPlans = parseSongsAndPlansRoute(path);
+      if (songsAndPlans !== null) {
+        return songsAndPlans;
+      }
       // v0.2 scheduling
       const teams = SERVICE_TEAMS_PATTERN.exec(path);
       if (teams !== null) {
@@ -66,6 +76,15 @@ export function routeHref(route: Route): string {
       return '#/people';
     case 'me':
       return '#/me';
+    // v0.2 songs and plans
+    case 'song':
+      return `#/songs/${String(route.songId)}`;
+    case 'rehearse':
+      return `#/services/${String(route.serviceId)}/rehearse`;
+    case 'song_usage':
+      return '#/reports/songs';
+    case 'service_types':
+      return '#/service-types';
     // v0.2 scheduling
     case 'matrix':
       return '#/matrix';
@@ -74,11 +93,23 @@ export function routeHref(route: Route): string {
   }
 }
 
-// v0.2 scheduling
-/**
- * The link to a service's rehearse page. The route itself comes with the
- * songs and charts work (#8, #10); My schedule only links to it.
- */
-export function rehearseHref(serviceId: number): string {
-  return `#/services/${String(serviceId)}/rehearse`;
+// v0.2 songs and plans
+
+const SONG_PATTERN = /^\/songs\/([1-9]\d*)$/;
+const REHEARSE_PATTERN = /^\/services\/([1-9]\d*)\/rehearse$/;
+
+/** The pages for songs and plans that a path names, or null. */
+function parseSongsAndPlansRoute(path: string): Route | null {
+  if (path === '/reports/songs') {
+    return { page: 'song_usage' };
+  }
+  if (path === '/service-types') {
+    return { page: 'service_types' };
+  }
+  const song = SONG_PATTERN.exec(path);
+  if (song !== null) {
+    return { page: 'song', songId: Number(song[1]) };
+  }
+  const rehearse = REHEARSE_PATTERN.exec(path);
+  return rehearse === null ? null : { page: 'rehearse', serviceId: Number(rehearse[1]) };
 }

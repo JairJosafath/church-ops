@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { decodeItem } from './api_types';
 import { itemFormFields, parseItemForm, type ItemFormFields } from './item_form';
-import { itemJson, songItemJson } from './test_fixtures';
+import { itemJson, personJson, songItemJson } from './test_fixtures';
 
 const SONG: ItemFormFields = {
   kind: 'song',
@@ -14,6 +14,8 @@ const SONG: ItemFormFields = {
   lowerThird: '',
   offStream: false,
   notes: '',
+  songLeaderId: '',
+  teamNotes: {},
 };
 
 describe('parseItemForm', () => {
@@ -30,6 +32,8 @@ describe('parseItemForm', () => {
         lowerThird: null,
         offStream: false,
         notes: '',
+        songLeaderId: null,
+        teamNotes: [],
       },
     });
   });
@@ -48,6 +52,38 @@ describe('parseItemForm', () => {
       ok: true,
       item: { kind: 'reading', arrangementId: null, key: null },
     });
+  });
+
+  // v0.2 songs and plans
+
+  it('reads who leads a song, and a note per team, trimmed and in team order', () => {
+    const result = parseItemForm({
+      ...SONG,
+      songLeaderId: '2',
+      teamNotes: { '6': ' Lyrics from verse 1 ', '5': 'Keys alone\nthen band' },
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      item: {
+        songLeaderId: 2,
+        teamNotes: [
+          { teamId: 5, note: 'Keys alone\nthen band' },
+          { teamId: 6, note: 'Lyrics from verse 1' },
+        ],
+      },
+    });
+  });
+
+  it('keeps an emptied team note as empty, which removes it', () => {
+    expect(parseItemForm({ ...SONG, teamNotes: { '5': '   ' } })).toMatchObject({
+      ok: true,
+      item: { teamNotes: [{ teamId: 5, note: '' }] },
+    });
+  });
+
+  it('gives an item that is not a song no song leader', () => {
+    const result = parseItemForm({ ...SONG, kind: 'sermon', title: 'Sermon', songLeaderId: '2' });
+    expect(result).toMatchObject({ ok: true, item: { songLeaderId: null } });
   });
 
   it('gives a header no time when its length is blank', () => {
@@ -93,11 +129,24 @@ describe('itemFormFields', () => {
       lowerThird: '',
       offStream: false,
       notes: '',
+      songLeaderId: '',
+      teamNotes: {},
     });
   });
 
   it('fills the form from a song item, so saving it unchanged changes nothing', () => {
-    const item = decodeItem(songItemJson({ scene: 'Band', notes: 'Slow intro' }), 'item');
+    const item = decodeItem(
+      songItemJson({
+        scene: 'Band',
+        notes: 'Slow intro',
+        song_leader: personJson({ id: 2, name: 'Ben Bakker' }),
+        team_notes: [
+          { team_id: 6, team_name: 'Stream', note: 'Lyrics from verse 1' },
+          { team_id: 5, team_name: 'Worship band', note: 'Start with keys alone' },
+        ],
+      }),
+      'item',
+    );
     const fields = itemFormFields(item);
     expect(fields).toMatchObject({
       kind: 'song',
@@ -105,6 +154,8 @@ describe('itemFormFields', () => {
       arrangementId: '7',
       key: 'Bb',
       scene: 'Band',
+      songLeaderId: '2',
+      teamNotes: { '5': 'Start with keys alone', '6': 'Lyrics from verse 1' },
     });
     expect(parseItemForm(fields)).toEqual({
       ok: true,
@@ -118,6 +169,11 @@ describe('itemFormFields', () => {
         lowerThird: null,
         offStream: false,
         notes: 'Slow intro',
+        songLeaderId: 2,
+        teamNotes: [
+          { teamId: 5, note: 'Start with keys alone' },
+          { teamId: 6, note: 'Lyrics from verse 1' },
+        ],
       },
     });
   });

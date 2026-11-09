@@ -11,6 +11,11 @@ import { routeHref, type Route } from './routes';
 import { ServicePage } from './service_page';
 import { ServicesPage } from './services_page';
 import { SongsPage } from './songs_page';
+// v0.2 songs and plans
+import { RehearsePage } from './rehearse_page';
+import { ServiceTypesPage } from './service_types_page';
+import { SongPage } from './song_page';
+import { SongUsagePage } from './song_usage_page';
 import { useHashRoute } from './use_hash_route';
 import { useResource } from './use_resource';
 
@@ -23,14 +28,33 @@ const NAV: readonly { readonly route: Route; readonly label: string }[] = [
   { route: { page: 'me' }, label: 'My schedule' },
 ];
 
+/**
+ * The navigation entry each page sits under. v0.2 songs and plans: a song under Songs;
+ * v0.2 scheduling: a plan's Teams section under Services.
+ */
+function navPageOf(route: Route): Route['page'] {
+  switch (route.page) {
+    case 'service':
+    case 'live':
+    case 'rehearse':
+    case 'service_types':
+    case 'service_teams':
+      return 'services';
+    case 'song':
+    case 'song_usage':
+      return 'songs';
+    case 'services':
+    case 'songs':
+    case 'people':
+    case 'me':
+    case 'not_found':
+    case 'matrix':
+      return route.page;
+  }
+}
+
 function isCurrent(navRoute: Route, route: Route): boolean {
-  return navRoute.page === 'services'
-    ? route.page === 'services' ||
-        route.page === 'service' ||
-        route.page === 'live' ||
-        // v0.2 scheduling
-        route.page === 'service_teams'
-    : navRoute.page === route.page;
+  return navRoute.page === navPageOf(route);
 }
 
 interface MePickerProps {
@@ -81,7 +105,7 @@ export function App({ title }: AppProps): ReactElement {
       case 'services':
         return <ServicesPage />;
       case 'service':
-        return <ServicePage key={route.serviceId} serviceId={route.serviceId} />;
+        return <ServicePage key={route.serviceId} serviceId={route.serviceId} people={people} />;
       case 'live':
         return (
           <LivePage key={route.serviceId} serviceId={route.serviceId} me={me} people={people} />
@@ -92,11 +116,27 @@ export function App({ title }: AppProps): ReactElement {
         return <PeoplePage people={people} onPeopleChanged={reloadPeople} />;
       case 'me':
         return <MePage me={me} />;
+      // v0.2 songs and plans
+      case 'song':
+        return <SongPage key={route.songId} songId={route.songId} />;
+      case 'rehearse':
+        return <RehearsePage key={route.serviceId} serviceId={route.serviceId} />;
+      case 'song_usage':
+        return <SongUsagePage />;
+      case 'service_types':
+        return <ServiceTypesPage />;
       // v0.2 scheduling
       case 'matrix':
         return <MatrixPage />;
       case 'service_teams':
-        return <ServicePage key={route.serviceId} serviceId={route.serviceId} focusTeams />;
+        return (
+          <ServicePage
+            key={route.serviceId}
+            serviceId={route.serviceId}
+            people={people}
+            focusTeams
+          />
+        );
       case 'not_found':
         return (
           <>

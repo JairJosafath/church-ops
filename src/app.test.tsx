@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './app';
@@ -56,6 +56,21 @@ describe('App', () => {
     await screen.findByRole('option', { name: 'Ben Bakker' });
     fireEvent.change(screen.getByLabelText('You are'), { target: { value: '2' } });
     expect(await screen.findByText('For Ben Bakker.')).toBeTruthy();
+  });
+
+  // v0.2 songs and plans
+  it.each([
+    { hash: '#/songs/3', nav: 'Songs' },
+    { hash: '#/reports/songs', nav: 'Songs' },
+    { hash: '#/services/20/rehearse', nav: 'Services' },
+    { hash: '#/service-types', nav: 'Services' },
+    // v0.2 scheduling
+    { hash: '#/services/20/teams', nav: 'Services' },
+  ])('marks $nav in the navigation on $hash', ({ hash, nav }) => {
+    window.location.hash = hash;
+    render(<App title="church-ops" />);
+    const main = within(screen.getByRole('navigation', { name: 'Main' }));
+    expect(main.getByRole('link', { name: nav }).getAttribute('aria-current')).toBe('page');
   });
 
   // v0.2 scheduling

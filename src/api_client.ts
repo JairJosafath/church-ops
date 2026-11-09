@@ -29,6 +29,13 @@ import {
   type ServiceSummary,
   type Song,
   type Team,
+  // v0.2 songs and plans
+  decodePlanTime,
+  decodeServiceType,
+  decodeSongUsage,
+  type PlanTime,
+  type ServiceType,
+  type SongUsage,
 } from './api_types';
 import { arrayOf, DecodeError, isRecord, type Decoder } from './decode';
 
@@ -70,16 +77,31 @@ export interface ItemInput {
   readonly scene: string | null;
   readonly lowerThird: string | null;
   readonly offStream: boolean;
+  /** Left blank on a new song item, the api copies the notes of the last time it was planned. */
   readonly notes: string;
+  // v0.2 songs and plans
+  /** Who leads the song; songs only. */
+  readonly songLeaderId: number | null;
+  /** A note per team; an empty note removes that team's note. */
+  readonly teamNotes: readonly TeamNoteInput[];
 }
 
 export interface NewSong {
   readonly title: string;
   readonly authors: string;
   readonly ccli: string | null;
+  // v0.2 songs and plans
+  readonly tags: readonly string[];
 }
 
-export type NewArrangement = Omit<Arrangement, 'id' | 'songId'>;
+/** Every field of an arrangement, as PATCH takes it. */
+export type ArrangementInput = Omit<Arrangement, 'id' | 'songId'>;
+
+/** The fields POST takes for a new arrangement (v0.1); the rest are edited after. */
+export type NewArrangement = Pick<
+  ArrangementInput,
+  'name' | 'key' | 'tempoBpm' | 'meter' | 'lengthSeconds' | 'sequence' | 'chart'
+>;
 
 export type NewBlockout = Omit<Blockout, 'id' | 'personId'>;
 
@@ -122,6 +144,27 @@ export interface ApiClient {
   advanceLive(serviceId: number, personId: number, toIndex: number): Promise<LiveState>;
   handOver(serviceId: number, fromPersonId: number, toPersonId: number): Promise<LiveState>;
   endLive(serviceId: number): Promise<void>;
+  // v0.2 songs and plans
+  getSong(songId: number, signal?: AbortSignal): Promise<Song>;
+  /** The songs with `filter.tag` whose title or authors match `filter.query`. */
+  findSongs(filter: SongFilter, signal?: AbortSignal): Promise<Song[]>;
+  updateSong(songId: number, change: SongChange): Promise<Song>;
+  updateArrangement(
+    songId: number,
+    arrangementId: number,
+    arrangement: ArrangementInput,
+  ): Promise<Arrangement>;
+  /** How often each song was played between `from` and `to` ("YYYY-MM-DD"), most first. */
+  songUsage(from: string, to: string, signal?: AbortSignal): Promise<SongUsage[]>;
+  listServiceTypes(signal?: AbortSignal): Promise<ServiceType[]>;
+  createServiceType(serviceType: ServiceTypeInput): Promise<ServiceType>;
+  updateServiceType(serviceTypeId: number, serviceType: ServiceTypeInput): Promise<ServiceType>;
+  /** Makes the plan's items and needed positions the type's template. */
+  saveTemplateFromService(serviceTypeId: number, serviceId: number): Promise<ServiceType>;
+  /** A new plan from its type's template, on a date, at the type's start time. */
+  createServiceOfType(plan: NewServiceOfType): Promise<Service>;
+  addRehearsal(serviceId: number, rehearsal: NewRehearsal): Promise<PlanTime>;
+  removeTime(serviceId: number, timeId: number): Promise<void>;
   // v0.2 scheduling
   addPositionMember(positionId: number, personId: number): Promise<Position>;
   removePositionMember(positionId: number, personId: number): Promise<void>;
@@ -175,19 +218,98 @@ function itemBody(item: ItemInput, forCreate: boolean): Record<string, unknown> 
     key: item.key,
     scene: item.scene,
     lower_third: item.lowerThird,
+    // v0.2 songs and plans: a song leader is for songs only, so another kind
+    // never sends one.
+    ...(item.kind === 'song' ? { song_leader_id: item.songLeaderId } : {}),
   };
+  if (forCreate) {
+    // A new item leaves out what it does not have (only a song names an
+    // arrangement, and the api refuses one on any other kind). v0.2 songs and
+    // plans: it leaves out blank notes too, so a new song item gets the notes
+    // the team wrote the last time it was planned.
+    const teamNotes = item.teamNotes.filter((entry) => entry.note !== '');
+    return {
+      kind: item.kind,
+      title: item.title,
+      length_seconds: item.lengthSeconds,
+      off_stream: item.offStream,
+      ...(item.notes === '' ? {} : { notes: item.notes }),
+      ...(teamNotes.length === 0 ? {} : { team_notes: teamNotes.map(teamNoteBody) }),
+      ...Object.fromEntries(Object.entries(optional).filter(([, value]) => value !== null)),
+    };
+  }
+  // An edit sends null to clear a field, and an empty note to remove a team's note.
   return {
     kind: item.kind,
     title: item.title,
     length_seconds: item.lengthSeconds,
     off_stream: item.offStream,
     notes: item.notes,
-    // A new item leaves out what it does not have (only a song names an
-    // arrangement, and the api refuses one on any other kind); an edit sends
-    // null to clear a field.
-    ...(forCreate
-      ? Object.fromEntries(Object.entries(optional).filter(([, value]) => value !== null))
-      : optional),
+    team_notes: item.teamNotes.map(teamNoteBody),
+    ...optional,
+  };
+}
+
+// v0.2 songs and plans
+
+export interface TeamNoteInput {
+  readonly teamId: number;
+  readonly note: string;
+}
+
+export interface SongFilter {
+  /** Only songs with this tag; null for every tag. */
+  readonly tag: string | null;
+  /** Words to search for; "" for all. */
+  readonly query: string;
+}
+
+export interface SongChange {
+  readonly title: string;
+  readonly authors: string;
+  readonly ccli: string | null;
+  readonly tags: readonly string[];
+}
+
+export type ServiceTypeInput = Pick<ServiceType, 'name' | 'startTime' | 'rehearsalOffsetMinutes'>;
+
+export interface NewServiceOfType {
+  readonly serviceTypeId: number;
+  readonly serviceTypeName: string;
+  readonly title: string;
+  /** "YYYY-MM-DD"; the plan starts at the type's start time that day. */
+  readonly date: string;
+  readonly series: string;
+  readonly streamed: boolean;
+}
+
+export interface NewRehearsal {
+  readonly name: string;
+  readonly startsAt: string;
+  readonly endsAt: string;
+}
+
+function teamNoteBody(entry: TeamNoteInput): Record<string, unknown> {
+  return { team_id: entry.teamId, note: entry.note };
+}
+
+function songQuery(filter: SongFilter): string {
+  const params = new URLSearchParams();
+  if (filter.tag !== null) {
+    params.set('tag', filter.tag);
+  }
+  if (filter.query.trim() !== '') {
+    params.set('q', filter.query.trim());
+  }
+  const query = params.toString();
+  return query === '' ? '' : `?${query}`;
+}
+
+function serviceTypeBody(serviceType: ServiceTypeInput): Record<string, unknown> {
+  return {
+    name: serviceType.name,
+    start_time: serviceType.startTime,
+    rehearsal_offset_minutes: serviceType.rehearsalOffsetMinutes,
   };
 }
 
@@ -242,6 +364,8 @@ export function createApiClient(fetchLike: FetchLike, base: string): ApiClient {
         title: song.title,
         authors: song.authors,
         ...(song.ccli === null ? {} : { ccli: song.ccli }),
+        // v0.2 songs and plans: sent only when there are tags, as a v0.1 api takes none.
+        ...(song.tags.length === 0 ? {} : { tags: song.tags }),
       }),
     createArrangement: (songId, arrangement) =>
       call(decodeArrangement, 'POST', `/songs/${String(songId)}/arrangements`, {
@@ -339,6 +463,81 @@ export function createApiClient(fetchLike: FetchLike, base: string): ApiClient {
       }),
     endLive: async (serviceId) => {
       await send('DELETE', `${service(serviceId)}/live`);
+    },
+    // v0.2 songs and plans
+    getSong: (songId, signal) =>
+      call(decodeSong, 'GET', `/songs/${String(songId)}`, undefined, signal),
+    findSongs: (filter, signal) =>
+      call(arrayOf(decodeSong), 'GET', `/songs${songQuery(filter)}`, undefined, signal),
+    updateSong: (songId, change) =>
+      call(decodeSong, 'PATCH', `/songs/${String(songId)}`, {
+        title: change.title,
+        authors: change.authors,
+        ccli: change.ccli,
+        tags: change.tags,
+      }),
+    updateArrangement: (songId, arrangementId, arrangement) =>
+      call(
+        decodeArrangement,
+        'PATCH',
+        `/songs/${String(songId)}/arrangements/${String(arrangementId)}`,
+        {
+          name: arrangement.name,
+          key: arrangement.key,
+          tempo_bpm: arrangement.tempoBpm,
+          meter: arrangement.meter,
+          length_seconds: arrangement.lengthSeconds,
+          sequence: arrangement.sequence,
+          chart: arrangement.chart,
+          keys: arrangement.keys,
+          notes: arrangement.notes,
+          audio_url: arrangement.audioUrl,
+        },
+      ),
+    songUsage: (from, to, signal) =>
+      call(
+        arrayOf(decodeSongUsage),
+        'GET',
+        `/reports/song-usage?${new URLSearchParams({ from, to }).toString()}`,
+        undefined,
+        signal,
+      ),
+    listServiceTypes: (signal) =>
+      call(arrayOf(decodeServiceType), 'GET', '/service-types', undefined, signal),
+    createServiceType: (serviceType) =>
+      call(decodeServiceType, 'POST', '/service-types', serviceTypeBody(serviceType)),
+    updateServiceType: (serviceTypeId, serviceType) =>
+      call(
+        decodeServiceType,
+        'PATCH',
+        `/service-types/${String(serviceTypeId)}`,
+        serviceTypeBody(serviceType),
+      ),
+    saveTemplateFromService: (serviceTypeId, serviceId) =>
+      call(
+        decodeServiceType,
+        'POST',
+        `/service-types/${String(serviceTypeId)}/template/from-service`,
+        { service_id: serviceId },
+      ),
+    createServiceOfType: (plan) =>
+      call(decodeService, 'POST', '/services', {
+        title: plan.title,
+        service_type: plan.serviceTypeName,
+        service_type_id: plan.serviceTypeId,
+        date: plan.date,
+        series: plan.series,
+        streamed: plan.streamed,
+      }),
+    addRehearsal: (serviceId, rehearsal) =>
+      call(decodePlanTime, 'POST', `${service(serviceId)}/times`, {
+        kind: 'rehearsal',
+        name: rehearsal.name,
+        starts_at: rehearsal.startsAt,
+        ends_at: rehearsal.endsAt,
+      }),
+    removeTime: async (serviceId, timeId) => {
+      await send('DELETE', `${service(serviceId)}/times/${String(timeId)}`);
     },
     // v0.2 scheduling
     addPositionMember: (positionId, personId) =>
