@@ -1,0 +1,86 @@
+# Runs the quality contract on every pull request and on main. The branch
+# protection of main requires a passing "check" context before a merge.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: base
+    steps:
+      - name: Check out
+        run: |
+          git init -q .
+          git -c http.extraHeader="Authorization: token ${{ gitea.token }}" \
+            fetch -q --depth 1 "${{ gitea.server_url }}/${{ gitea.repository }}.git" "${{ gitea.sha }}"
+          git checkout -q FETCH_HEAD
+      # A change to only the changelog, docs/ or images has nothing for the
+      # steps below to verify: the job passes without them, so the required
+      # "check" context still reports and the change merges. Any other file,
+      # a first push, or a base git can't fetch or compare runs them as always.
+      - name: What the change touches
+        id: changes
+        env:
+          TOKEN: ${{ gitea.token }}
+          URL: ${{ gitea.server_url }}/${{ gitea.repository }}.git
+          BASE: ${{ gitea.event.pull_request.base.sha || gitea.event.before }}
+        run: |
+          code=true
+          case $BASE in
+          *[!0]*)
+            if git -c http.extraHeader="Authorization: token $TOKEN" fetch -q --depth 1 "$URL" "$BASE" &&
+              files=$(git diff --no-renames --name-only "$BASE" HEAD) && [ -n "$files" ] &&
+              ! printf '%s\n' "$files" | grep -qvE '^CHANGELOG\.md$|^docs/|\.(png|jpg|gif|svg)$'; then
+              code=false
+              echo "Only the changelog, docs/ or images changed; skipping the checks."
+            fi
+            ;;
+          esac
+          echo "code=$code" >>"$GITHUB_OUTPUT"
+      - name: Credentials for the package registries
+        if: steps.changes.outputs.code == 'true'
+        # The factory's packages (other apps of this project) come from the
+        # owner's npm registry and PyPI index, the Git host's own unless the
+        # GitProvider's spec.packages names others: then the operator sets
+        # these Actions variables and secrets, and empty ones mean the host.
+        # npm sends the scope to the registry through ~/.npmrc; uv logs in to
+        # the index with ~/.netrc, whose machine is the hostname alone: uv, pip
+        # and requests match it without the port, which npm keeps. A token of
+        # the index is the password of the user __token__. A package the
+        # registry lacks fails here instead of being asked of npmjs.org or
+        # pypi.org.
+        env:
+          NPM_SCOPE: ${{ vars.THEOS_NPM_SCOPE }}
+          NPM_REGISTRY: ${{ vars.THEOS_NPM_REGISTRY }}
+          NPM_TOKEN: ${{ secrets.THEOS_NPM_TOKEN }}
+          PYPI_INDEX: ${{ vars.THEOS_PYPI_INDEX }}
+          PYPI_TOKEN: ${{ secrets.THEOS_PYPI_TOKEN }}
+          SERVER: ${{ gitea.server_url }}
+          OWNER: ${{ gitea.repository_owner }}
+          ACTOR: ${{ gitea.actor }}
+          TOKEN: ${{ gitea.token }}
+        run: |
+          registry=${NPM_REGISTRY:-$SERVER/api/packages/$OWNER/npm/}
+          registry=${registry%/}/
+          index=${PYPI_INDEX:-$SERVER/api/packages/$OWNER/pypi/simple}
+          host=${index#*://}
+          host=${host%%/*}
+          host=${host%%:*}
+          login=${PYPI_TOKEN:+__token__}
+          login=${login:-$ACTOR}
+          umask 077
+          printf '%s:registry=%s\n//%s:_authToken=%s\n' "${NPM_SCOPE:-@theos}" "$registry" "${registry#*://}" "${NPM_TOKEN:-$TOKEN}" > "$HOME/.npmrc"
+          printf 'machine %s\nlogin %s\npassword %s\n' "$host" "$login" "${PYPI_TOKEN:-$TOKEN}" > "$HOME/.netrc"
+      # uv's cache and the Python it installs (about 250 MB) go in the
+      # checkout, which is in memory and goes with the job: on the runner's
+      # disk they would stall the node, and with it the whole cluster, and in
+      # its /tmp (256 MiB) they wouldn't fit. On the same filesystem the
+      # virtual environment links to the cache instead of copying it.
+      - name: make check
+        if: steps.changes.outputs.code == 'true'
+        run: |
+          export UV_CACHE_DIR="$PWD/.uv/cache" UV_PYTHON_INSTALL_DIR="$PWD/.uv/python"
+          make check

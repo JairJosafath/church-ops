@@ -1,0 +1,13 @@
+# Keep the build context to what the image needs.
+.git
+.devcontainer
+.venv
+**/__pycache__
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.uv
+dist
+.env
+deploy
+tests
