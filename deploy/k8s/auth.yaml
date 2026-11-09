@@ -1,0 +1,14 @@
+# Who issues the bearer tokens the app accepts. Set both before you apply:
+# OIDC_ISSUER is the issuer's URL (its keys come from
+# $OIDC_ISSUER/.well-known/openid-configuration), OIDC_AUDIENCE the `aud` a
+# token must carry.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-auth
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: church-ops
+data:
+  OIDC_ISSUER: https://issuer.example.com
+  OIDC_AUDIENCE: api

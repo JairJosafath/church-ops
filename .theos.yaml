@@ -1,0 +1,14 @@
+# Written once by theos when this repository was scaffolded.
+# The Session client reads it to find this repository's Container.
+project: church-ops
+softwareSystem: church-ops
+container: api
+type: service
+scaffoldedFrom:
+    - python-fastapi@v1.6.0
+    - python-standard@v1.7.0
+    - small@v1.1.0
+    - k8s-manifests@v1.9.1
+    - postgres@v1.3.0
+    - church-ops@v0.1.0
+checks: EveryChange

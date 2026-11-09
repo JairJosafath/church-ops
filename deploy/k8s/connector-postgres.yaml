@@ -1,0 +1,109 @@
+# The api database: a single Postgres, its Service and the app's
+# connection settings. Before applying, make the Secret with its password, for example:
+#   kubectl create secret generic api-postgres --from-literal=password="$(openssl rand -hex 24)"
+# Postgres reads it as POSTGRES_PASSWORD and the app as PGPASSWORD, so the
+# ConfigMap's DATABASE_URL holds no secret. To use a database provisioned
+# elsewhere (a managed service, an operator), drop the StatefulSet and Service
+# and point DATABASE_URL at it.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-postgres
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: church-ops
+data:
+  DATABASE_URL: postgresql://api@api-postgres:5432/api
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-postgres
+  labels:
+    app.kubernetes.io/name: api-postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: church-ops
+spec:
+  # Headless: the name resolves to the Postgres pod once it is ready.
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: api-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: api-postgres
+  labels:
+    app.kubernetes.io/name: api-postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: church-ops
+spec:
+  serviceName: api-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api-postgres
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: church-ops
+    spec:
+      # The image's postgres user (uid 70 in the alpine image); fsGroup makes
+      # the volume writable for it.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          # postgres:17.11-alpine, pinned by digest.
+          image: postgres:17.11-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: api
+            - name: POSTGRES_DB
+              value: api
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: api-postgres
+                  key: password
+            # A folder inside the volume, since its root may hold lost+found.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", "api", "-d", "api"]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", "api", "-d", "api"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 1Gi
