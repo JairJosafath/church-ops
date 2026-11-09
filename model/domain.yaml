@@ -5,10 +5,8 @@
 # renders). SoftwareSystem church-ops names it in spec.domainRefs, so every
 # Container is scaffolded with them under docs/agents/domain/church-ops/.
 #
-# The ref is the full SHA of the commit that the tag v0.1.0 marks. The tag was
-# cut but isn't pushed to GitHub yet, and a ref must exist on the remote
-# (theos refuses a branch). Once v0.1.0 is pushed, either value pins the same
-# files.
+# The ref is the tag v0.1.0, commit f182c4a: the domain's Markdown and .theos/
+# alone. theos refuses a branch as a ref.
 #
 # The next tag needs care: theos reads a Domain's whole repository, and from
 # this commit on, main also holds model/, brief.yaml and CLAUDE.md. Any of
@@ -26,4 +24,4 @@ spec:
   description: Services, songs and run sheets; people, teams and scheduling under the GDPR; the stream in OBS and the band's Ableton set; chat and reminders; gifts under the ANBI rules. The practices, the common mistakes and the choices to make in each.
   template:
     url: https://github.com/JairJosafath/church-ops
-    ref: f182c4aac0068d574e90c2bfe04a9b8c141b55b7
+    ref: v0.1.0

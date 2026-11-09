@@ -85,8 +85,8 @@ scaffold with `DomainNotMarkdown`), and every Markdown file is copied into
 each Container's `docs/agents/domain/church-ops/`. This `CLAUDE.md`,
 `model/` and `brief.yaml` sit on `main` beside the domain, so:
 
-- `model/domain.yaml` pins commit `f182c4a`, the domain alone, which tag
-  `v0.1.0` marks.
+- `model/domain.yaml` pins tag `v0.1.0` (commit `f182c4a`), the domain
+  alone.
 - Until theos#35 lands, cut the next domain tag from a commit that holds
   only the domain's Markdown and `.theos/`, never from `main`.
   `.theos/CLAUDE.md` has the steps for the domain's content and versions.
