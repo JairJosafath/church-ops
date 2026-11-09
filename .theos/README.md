@@ -1,4 +1,4 @@
-# church-ops (Domain, catalog entry `church`)
+# church-ops (Domain, catalog entry `church-ops`)
 
 What software for a church to organize itself is about, as Markdown an
 agent reads before it plans or reviews a change: a `README.md` with a
@@ -9,11 +9,11 @@ mistakes*, *Controversies* (the choice and why) and *Sources*. Plain prose,
 no code to copy and no stack: the Standard has the stack. Written for a
 church in the Netherlands (GDPR and UAVG, ANBI, euros).
 
-- **Named by:** a SoftwareSystem's `spec.domainRefs` (`church`). Every
+- **Named by:** a SoftwareSystem's `spec.domainRefs` (`church-ops`). Every
   Container of that system gets it, whatever its type: a Domain has no
   `supportedTypes`.
 - **Writes:** every file outside this `.theos/` folder under
-  `docs/agents/domain/church/`; the operator adds the prefix, so the files
+  `docs/agents/domain/church-ops/`; the operator adds the prefix, so the files
   name each other by their bare names. Markdown only: a file of any other
   kind fails the Container. This folder is not rendered.
 - **Read by:** the Standards' `AGENTS.md` and `docs/agents/reviewer.md`,

@@ -1,0 +1,194 @@
+# Who uses what, and how the parts talk. Each Person uses the system and the
+# web app; the web app calls the API, the API keeps its data in the
+# DataStore, and the worker follows the API and drives the External systems.
+# Like the webshop's payments-worker, the worker never reads the DataStore
+# itself: it goes through the API.
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: worship-leader-uses-church-ops
+  namespace: church-ops
+spec:
+  source: {kind: Person, name: worship-leader}
+  target: {kind: SoftwareSystem, name: church-ops}
+  description: Plans services, songs, arrangements and keys, and schedules the band
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: worship-leader-uses-web
+  namespace: church-ops
+spec:
+  source: {kind: Person, name: worship-leader}
+  target: {kind: Container, name: web}
+  description: Builds the service order, picks arrangements and keys, and plans rehearsals, in the browser
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: volunteer-uses-church-ops
+  namespace: church-ops
+spec:
+  source: {kind: Person, name: volunteer}
+  target: {kind: SoftwareSystem, name: church-ops}
+  description: Answers requests to serve and keeps their blockouts
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: volunteer-uses-web
+  namespace: church-ops
+spec:
+  source: {kind: Person, name: volunteer}
+  target: {kind: Container, name: web}
+  description: Accepts or declines requests, sets blockouts and sees their schedule, on the phone
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: volunteer-uses-chat-host
+  namespace: church-ops
+spec:
+  source: {kind: Person, name: volunteer}
+  target: {kind: SoftwareSystem, name: chat-host}
+  description: Gets requests and reminders, and chats with their team
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: pastor-uses-church-ops
+  namespace: church-ops
+spec:
+  source: {kind: Person, name: pastor}
+  target: {kind: SoftwareSystem, name: church-ops}
+  description: Shapes the service order and keeps pastoral notes
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: pastor-uses-web
+  namespace: church-ops
+spec:
+  source: {kind: Person, name: pastor}
+  target: {kind: Container, name: web}
+  description: Adds the sermon, readings and prayers to the order, and reads and writes pastoral notes
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: tech-operator-uses-church-ops
+  namespace: church-ops
+spec:
+  source: {kind: Person, name: tech-operator}
+  target: {kind: SoftwareSystem, name: church-ops}
+  description: Runs the service from the run sheet
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: tech-operator-uses-web
+  namespace: church-ops
+spec:
+  source: {kind: Person, name: tech-operator}
+  target: {kind: Container, name: web}
+  description: Advances live mode item by item, and sees the stream's and the stage computer's state
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: tech-operator-uses-obs
+  namespace: church-ops
+spec:
+  source: {kind: Person, name: tech-operator}
+  target: {kind: SoftwareSystem, name: obs}
+  description: Takes over the stream by hand when something goes wrong
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: tech-operator-uses-ableton
+  namespace: church-ops
+spec:
+  source: {kind: Person, name: tech-operator}
+  target: {kind: SoftwareSystem, name: ableton}
+  description: Takes over the click and tracks by hand when something goes wrong
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: member-uses-church-ops
+  namespace: church-ops
+spec:
+  source: {kind: Person, name: member}
+  target: {kind: SoftwareSystem, name: church-ops}
+  description: Sees what is coming up and when they serve
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: member-uses-web
+  namespace: church-ops
+spec:
+  source: {kind: Person, name: member}
+  target: {kind: Container, name: web}
+  description: Sees the coming services and their order, in the browser
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: web-to-api
+  namespace: church-ops
+spec:
+  source: {kind: Container, name: web}
+  target: {kind: Container, name: api}
+  description: Reads and writes services, songs, schedules and run sheets, and advances live mode (JSON over HTTP)
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: api-to-church-ops-db
+  namespace: church-ops
+spec:
+  source: {kind: Container, name: api}
+  target: {kind: DataStore, name: church-ops-db}
+  description: Reads and writes people, teams, schedules, services, songs and run sheets
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: integrations-worker-to-api
+  namespace: church-ops
+spec:
+  source: {kind: Container, name: integrations-worker}
+  target: {kind: Container, name: api}
+  description: Follows live mode's current item and cues, takes the notifications due, and reports OBS's and Ableton's state (JSON over HTTP)
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: integrations-worker-to-obs
+  namespace: church-ops
+spec:
+  source: {kind: Container, name: integrations-worker}
+  target: {kind: SoftwareSystem, name: obs}
+  description: Switches scenes, shows lower thirds and starts or stops the stream and recording (obs-websocket v5)
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: integrations-worker-to-ableton
+  namespace: church-ops
+spec:
+  source: {kind: Container, name: integrations-worker}
+  target: {kind: SoftwareSystem, name: ableton}
+  description: Readies the next song's tempo and tracks between songs, never during one (OSC)
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: integrations-worker-to-chat-host
+  namespace: church-ops
+spec:
+  source: {kind: Container, name: integrations-worker}
+  target: {kind: SoftwareSystem, name: chat-host}
+  description: Sends requests to serve, reminders and changes to the people and teams they concern

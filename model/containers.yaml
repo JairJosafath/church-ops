@@ -1,0 +1,89 @@
+# What church-ops is made of, in the webshop's shape: a web app (react-vite,
+# static-site), a service (python-fastapi), a worker (python-cli) and a
+# Postgres DataStore. Every entry is in the seed catalog the chart makes for
+# each of gitea.projects (templates/versions.txt in theos), and each one
+# supports its Container's type. Each Container has Deployment k8s-manifests,
+# so its repository holds a Dockerfile and its Kubernetes manifests. None
+# names spec.deploy: there is no DeployTarget in this model yet.
+apiVersion: theos.factory.io/v1beta1
+kind: Container
+metadata:
+  name: web
+  namespace: church-ops
+spec:
+  softwareSystemRef:
+    name: church-ops
+  displayName: Web
+  description: The app in the browser, to plan services, songs and run sheets, answer requests and set blockouts, and run live mode in the booth.
+  type: static-site
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: react-vite
+  standardRef:
+    name: ts-standard
+  computeRef:
+    name: small
+  deploymentRef:
+    name: k8s-manifests
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Container
+metadata:
+  name: api
+  namespace: church-ops
+spec:
+  softwareSystemRef:
+    name: church-ops
+  displayName: API
+  description: Keeps people, teams and schedules, service types, services, songs, arrangements and run sheets, and live mode's current item; says what each person may see.
+  type: service
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: python-fastapi
+  standardRef:
+    name: python-standard
+  computeRef:
+    name: small
+  deploymentRef:
+    name: k8s-manifests
+---
+# A worker on Kubernetes: python-cli's worker, a loop that stops cleanly on
+# SIGTERM, in the image k8s-manifests builds, with no Service. It reaches OBS
+# and Ableton on the church's booth network, so the cluster it runs on must
+# reach that network.
+apiVersion: theos.factory.io/v1beta1
+kind: Container
+metadata:
+  name: integrations-worker
+  namespace: church-ops
+spec:
+  softwareSystemRef:
+    name: church-ops
+  displayName: Integrations worker
+  description: Follows live mode and drives OBS's scenes and Ableton's songs from the run sheet, and delivers requests and reminders to the chat host.
+  type: worker
+  gitProviderRef:
+    name: gitea
+  frameworkRef:
+    name: python-cli
+  standardRef:
+    name: python-standard
+  computeRef:
+    name: small
+  deploymentRef:
+    name: k8s-manifests
+---
+apiVersion: theos.factory.io/v1beta1
+kind: DataStore
+metadata:
+  name: church-ops-db
+  namespace: church-ops
+spec:
+  softwareSystemRef:
+    name: church-ops
+  displayName: Church Ops DB
+  description: People, teams, schedules, services, songs, arrangements and run sheets.
+  connectorRef:
+    name: postgres

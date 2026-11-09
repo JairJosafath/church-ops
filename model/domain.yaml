@@ -1,0 +1,27 @@
+# What church-ops is about: services and planning, people and teams,
+# streaming and OBS, sound and Ableton, chat and notifications, giving and
+# finance. The template is this repository's own domain files (README.md and
+# the topic files at its root; maintainer notes in .theos/, which theos never
+# renders). SoftwareSystem church-ops names it in spec.domainRefs, so every
+# Container is scaffolded with them under docs/agents/domain/church-ops/.
+#
+# The ref is the tag v0.1.0, commit f182c4a: the domain's Markdown and .theos/
+# alone. theos refuses a branch as a ref.
+#
+# The next tag needs care: theos reads a Domain's whole repository, and from
+# this commit on, main also holds model/, brief.yaml and CLAUDE.md. Any of
+# those in a tagged tree fails every Container's scaffold (DomainNotMarkdown),
+# or copies CLAUDE.md into each one. Until template.path exists
+# (github.com/JairJosafath/theos/issues/35), cut domain tags from a commit
+# that holds only the domain's Markdown and .theos/ (see CLAUDE.md).
+apiVersion: theos.factory.io/v1beta1
+kind: Domain
+metadata:
+  name: church-ops
+  namespace: church-ops
+spec:
+  displayName: Church
+  description: Services, songs and run sheets; people, teams and scheduling under the GDPR; the stream in OBS and the band's Ableton set; chat and reminders; gifts under the ANBI rules. The practices, the common mistakes and the choices to make in each.
+  template:
+    url: https://github.com/JairJosafath/church-ops
+    ref: v0.1.0
