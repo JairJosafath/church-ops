@@ -26,6 +26,26 @@ spec:
 apiVersion: theos.factory.io/v1beta1
 kind: Relationship
 metadata:
+  name: team-leader-uses-church-ops
+  namespace: church-ops
+spec:
+  source: {kind: Person, name: team-leader}
+  target: {kind: SoftwareSystem, name: church-ops}
+  description: Fills the team's positions in each plan
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
+  name: team-leader-uses-web
+  namespace: church-ops
+spec:
+  source: {kind: Person, name: team-leader}
+  target: {kind: Container, name: web}
+  description: Schedules each needed position from the plan and the Matrix, seeing blockouts and conflicts
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Relationship
+metadata:
   name: volunteer-uses-church-ops
   namespace: church-ops
 spec:
@@ -41,7 +61,7 @@ metadata:
 spec:
   source: {kind: Person, name: volunteer}
   target: {kind: Container, name: web}
-  description: Accepts or declines requests, sets blockouts and sees their schedule, on the phone
+  description: Answers requests, keeps blockouts and rehearses each song in the plan's key, on the phone
 ---
 apiVersion: theos.factory.io/v1beta1
 kind: Relationship

@@ -10,9 +10,9 @@ metadata:
 spec:
   displayName: Church Ops
   description: >-
-    How a church organizes itself week to week: planning services and their
-    songs, scheduling the volunteers who serve in them, and running the
-    stream and the band's computer from the run sheet on a Sunday.
+    What a church's worship team plans, schedules and rehearses with: plans
+    from service-type templates, a song library with charts in every key,
+    scheduling teams position by position, and the run sheet on Sunday.
 ---
 apiVersion: theos.factory.io/v1beta1
 kind: Person
@@ -26,11 +26,20 @@ spec:
 apiVersion: theos.factory.io/v1beta1
 kind: Person
 metadata:
+  name: team-leader
+  namespace: church-ops
+spec:
+  displayName: Team leader
+  description: Leads a team (band, vocals, tech) and schedules its positions for each plan, following up declines.
+---
+apiVersion: theos.factory.io/v1beta1
+kind: Person
+metadata:
   name: volunteer
   namespace: church-ops
 spec:
   displayName: Volunteer
-  description: Serves in a team (band, sound, stream, welcome, kids' church); accepts or declines requests and sets their blockouts.
+  description: Serves in a team as a musician, vocalist or technician; answers requests, keeps their blockouts and rehearses the songs of the plans they serve in.
 ---
 apiVersion: theos.factory.io/v1beta1
 kind: Person
