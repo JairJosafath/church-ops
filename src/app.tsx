@@ -3,6 +3,7 @@ import { useCallback, type ReactElement } from 'react';
 import { api } from './api_client';
 import type { Person } from './api_types';
 import { LivePage } from './live_page';
+import { MatrixPage } from './matrix_page';
 import { MePage } from './me_page';
 import { setMeId, useMeId } from './me_store';
 import { PeoplePage } from './people_page';
@@ -15,14 +16,20 @@ import { useResource } from './use_resource';
 
 const NAV: readonly { readonly route: Route; readonly label: string }[] = [
   { route: { page: 'services' }, label: 'Services' },
+  // v0.2 scheduling
+  { route: { page: 'matrix' }, label: 'Matrix' },
   { route: { page: 'songs' }, label: 'Songs' },
   { route: { page: 'people' }, label: 'People' },
-  { route: { page: 'me' }, label: 'My requests' },
+  { route: { page: 'me' }, label: 'My schedule' },
 ];
 
 function isCurrent(navRoute: Route, route: Route): boolean {
   return navRoute.page === 'services'
-    ? route.page === 'services' || route.page === 'service' || route.page === 'live'
+    ? route.page === 'services' ||
+        route.page === 'service' ||
+        route.page === 'live' ||
+        // v0.2 scheduling
+        route.page === 'service_teams'
     : navRoute.page === route.page;
 }
 
@@ -74,7 +81,7 @@ export function App({ title }: AppProps): ReactElement {
       case 'services':
         return <ServicesPage />;
       case 'service':
-        return <ServicePage key={route.serviceId} serviceId={route.serviceId} people={people} />;
+        return <ServicePage key={route.serviceId} serviceId={route.serviceId} />;
       case 'live':
         return (
           <LivePage key={route.serviceId} serviceId={route.serviceId} me={me} people={people} />
@@ -85,6 +92,11 @@ export function App({ title }: AppProps): ReactElement {
         return <PeoplePage people={people} onPeopleChanged={reloadPeople} />;
       case 'me':
         return <MePage me={me} />;
+      // v0.2 scheduling
+      case 'matrix':
+        return <MatrixPage />;
+      case 'service_teams':
+        return <ServicePage key={route.serviceId} serviceId={route.serviceId} focusTeams />;
       case 'not_found':
         return (
           <>
@@ -133,7 +145,7 @@ export function App({ title }: AppProps): ReactElement {
       </main>
       <footer className="site-footer">
         <p>
-          No sign-in yet: &ldquo;You are&rdquo; only says whose requests to show and who holds live
+          No sign-in yet: &ldquo;You are&rdquo; only says whose schedule to show and who holds live
           control, and anyone using this page can choose anyone.
         </p>
       </footer>

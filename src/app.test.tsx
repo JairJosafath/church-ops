@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 describe('App', () => {
-  it('shows the requests of the person chosen as "You are", and remembers the choice', async () => {
+  it('shows the schedule of the person chosen as "You are", and remembers the choice', async () => {
     render(<App title="church-ops" />);
     expect(screen.getByText(/Choose who you are/)).toBeTruthy();
     await screen.findByRole('option', { name: 'Ben Bakker' });
@@ -42,7 +42,7 @@ describe('App', () => {
 
   it('marks the current page in the navigation and says there is no sign-in yet', () => {
     render(<App title="church-ops" />);
-    expect(screen.getByRole('link', { name: 'My requests' }).getAttribute('aria-current')).toBe(
+    expect(screen.getByRole('link', { name: 'My schedule' }).getAttribute('aria-current')).toBe(
       'page',
     );
     expect(screen.getByText(/No sign-in yet/)).toBeTruthy();
@@ -56,6 +56,14 @@ describe('App', () => {
     await screen.findByRole('option', { name: 'Ben Bakker' });
     fireEvent.change(screen.getByLabelText('You are'), { target: { value: '2' } });
     expect(await screen.findByText('For Ben Bakker.')).toBeTruthy();
+  });
+
+  // v0.2 scheduling
+  it('opens the Matrix from the navigation', async () => {
+    window.location.hash = '#/matrix';
+    render(<App title="church-ops" />);
+    expect(screen.getByRole('link', { name: 'Matrix' }).getAttribute('aria-current')).toBe('page');
+    expect(await screen.findByRole('heading', { name: 'Matrix' })).toBeTruthy();
   });
 
   it('shows a page for an unknown route', () => {

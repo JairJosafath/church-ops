@@ -11,6 +11,7 @@ import {
   field,
   nullable,
   oneOf,
+  fieldOr,
 } from './decode';
 
 export interface Person {
@@ -23,6 +24,9 @@ export interface Position {
   readonly id: number;
   readonly teamId: number;
   readonly name: string;
+  // v0.2 scheduling
+  /** The people who can fill it. */
+  readonly memberIds: readonly number[];
 }
 
 export interface Team {
@@ -112,6 +116,11 @@ export interface ScheduleRequest {
   readonly blocked: boolean;
   readonly createdAt: string;
   readonly answeredAt: string | null;
+  // v0.2 scheduling
+  /** The person's other pending or accepted requests at the same service. */
+  readonly alsoAsked: readonly AlsoAsked[];
+  /** Why the person declined; "" when they gave no reason. */
+  readonly declineReason: string;
 }
 
 export interface Service {
@@ -124,6 +133,9 @@ export interface Service {
   readonly items: readonly Item[];
   readonly endsAt: string;
   readonly requests: readonly ScheduleRequest[];
+  // v0.2 scheduling
+  /** The positions the plan needs filled, with how far each is filled. */
+  readonly needed: readonly Need[];
 }
 
 export interface ServiceSummary {
@@ -165,6 +177,9 @@ export interface LiveState {
   readonly current: Item | null;
   readonly next: Item | null;
   readonly devices: Devices;
+  // v0.2 scheduling
+  /** When the current item became current; null from an api that does not say. */
+  readonly itemStartedAt: string | null;
 }
 
 const decodeNullableString = nullable(decodeString);
@@ -184,6 +199,8 @@ export function decodePosition(value: unknown, path: string): Position {
     id: field(o, 'id', decodeInteger, path),
     teamId: field(o, 'team_id', decodeInteger, path),
     name: field(o, 'name', decodeString, path),
+    // v0.2 scheduling: new in v0.2, so an older api's missing field reads as nobody.
+    memberIds: fieldOr(o, 'member_ids', arrayOf(decodeInteger), [], path),
   };
 }
 
@@ -269,6 +286,9 @@ export function decodeScheduleRequest(value: unknown, path: string): ScheduleReq
     blocked: field(o, 'blocked', decodeBoolean, path),
     createdAt: field(o, 'created_at', decodeString, path),
     answeredAt: field(o, 'answered_at', decodeNullableString, path),
+    // v0.2 scheduling: new in v0.2, so an older api's missing fields read as empty.
+    alsoAsked: fieldOr(o, 'also_asked', arrayOf(decodeAlsoAsked), [], path),
+    declineReason: fieldOr(o, 'decline_reason', decodeString, '', path),
   };
 }
 
@@ -284,6 +304,8 @@ export function decodeService(value: unknown, path: string): Service {
     items: field(o, 'items', arrayOf(decodeItem), path),
     endsAt: field(o, 'ends_at', decodeString, path),
     requests: field(o, 'requests', arrayOf(decodeScheduleRequest), path),
+    // v0.2 scheduling: new in v0.2, so an older api's missing field reads as none needed.
+    needed: fieldOr(o, 'needed', arrayOf(decodeNeed), [], path),
   };
 }
 
@@ -332,5 +354,102 @@ export function decodeLiveState(value: unknown, path: string): LiveState {
     current: field(o, 'current', nullable(decodeItem), path),
     next: field(o, 'next', nullable(decodeItem), path),
     devices: field(o, 'devices', decodeDevices, path),
+    // v0.2 scheduling: new in v0.2, so an older api's missing field reads as unknown.
+    itemStartedAt: fieldOr(o, 'item_started_at', decodeNullableString, null, path),
+  };
+}
+
+// v0.2 scheduling
+
+/** Another pending or accepted request of the same person at the same service. */
+export interface AlsoAsked {
+  readonly position: Position;
+  readonly teamName: string;
+  readonly status: RequestStatus;
+}
+
+/** A position a plan needs, and how far it is filled: open = count - accepted - pending. */
+export interface Need {
+  readonly position: Position;
+  readonly teamName: string;
+  readonly count: number;
+  readonly accepted: number;
+  readonly pending: number;
+  readonly declined: number;
+  readonly open: number;
+}
+
+/** A pending or accepted request of a candidate at another service on the same day. */
+export interface Conflict {
+  readonly serviceId: number;
+  readonly serviceTitle: string;
+  readonly startsAt: string;
+  readonly teamName: string;
+  readonly positionName: string;
+  readonly status: RequestStatus;
+}
+
+/**
+ * A member of a position, as the scheduler sees them when filling it at one
+ * plan: the warnings to weigh, and how often they served. Warnings never
+ * refuse; the scheduler decides and the person answers.
+ */
+export interface Candidate {
+  readonly person: Person;
+  readonly blocked: boolean;
+  /** Shown to the scheduler only; "" when the person gave none. */
+  readonly alsoAsked: readonly AlsoAsked[];
+  readonly conflicts: readonly Conflict[];
+  /** Whether the person declined a request at this plan. */
+  readonly declinedHere: boolean;
+  /** "YYYY-MM-DD", or null when they have not served. */
+  readonly lastServedOn: string | null;
+  readonly timesServed90Days: number;
+}
+
+function decodeAlsoAsked(value: unknown, path: string): AlsoAsked {
+  const o = decodeObject(value, path);
+  return {
+    position: field(o, 'position', decodePosition, path),
+    teamName: field(o, 'team_name', decodeString, path),
+    status: field(o, 'status', oneOf(REQUEST_STATUSES), path),
+  };
+}
+
+function decodeNeed(value: unknown, path: string): Need {
+  const o = decodeObject(value, path);
+  return {
+    position: field(o, 'position', decodePosition, path),
+    teamName: field(o, 'team_name', decodeString, path),
+    count: field(o, 'count', decodeInteger, path),
+    accepted: field(o, 'accepted', decodeInteger, path),
+    pending: field(o, 'pending', decodeInteger, path),
+    declined: field(o, 'declined', decodeInteger, path),
+    open: field(o, 'open', decodeInteger, path),
+  };
+}
+
+function decodeConflict(value: unknown, path: string): Conflict {
+  const o = decodeObject(value, path);
+  return {
+    serviceId: field(o, 'service_id', decodeInteger, path),
+    serviceTitle: field(o, 'service_title', decodeString, path),
+    startsAt: field(o, 'starts_at', decodeString, path),
+    teamName: field(o, 'team_name', decodeString, path),
+    positionName: field(o, 'position_name', decodeString, path),
+    status: field(o, 'status', oneOf(REQUEST_STATUSES), path),
+  };
+}
+
+export function decodeCandidate(value: unknown, path: string): Candidate {
+  const o = decodeObject(value, path);
+  return {
+    person: field(o, 'person', decodePerson, path),
+    blocked: field(o, 'blocked', decodeBoolean, path),
+    alsoAsked: field(o, 'also_asked', arrayOf(decodeAlsoAsked), path),
+    conflicts: field(o, 'conflicts', arrayOf(decodeConflict), path),
+    declinedHere: field(o, 'declined_here', decodeBoolean, path),
+    lastServedOn: field(o, 'last_served_on', decodeNullableString, path),
+    timesServed90Days: field(o, 'times_served_90_days', decodeInteger, path),
   };
 }

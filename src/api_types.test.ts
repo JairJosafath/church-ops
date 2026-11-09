@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   decodeBlockout,
+  decodeCandidate,
+  decodePosition,
   decodeLiveState,
   decodeScheduleRequest,
   decodeService,
@@ -12,8 +14,11 @@ import {
 import { DecodeError } from './decode';
 import {
   blockoutJson,
+  candidateJson,
   itemJson,
   liveJson,
+  needJson,
+  positionJson,
   requestJson,
   serviceJson,
   serviceSummaryJson,
@@ -87,7 +92,7 @@ describe('the other records', () => {
 
   it('reads a team with its positions', () => {
     expect(decodeTeam(teamJson(), 'team').positions).toEqual([
-      { id: 10, teamId: 5, name: 'Drums' },
+      { id: 10, teamId: 5, name: 'Drums', memberIds: [] },
     ]);
   });
 
@@ -126,5 +131,118 @@ describe('the other records', () => {
         'live',
       ),
     ).toThrow('live.devices.obs: expected one of ok, unreachable, unconfigured, unknown');
+  });
+});
+
+// v0.2 scheduling
+describe('the v0.2 scheduling fields', () => {
+  it('reads an older api without them as empty', () => {
+    expect(decodePosition(positionJson(), 'position').memberIds).toEqual([]);
+    const request = decodeScheduleRequest(requestJson(), 'request');
+    expect(request.alsoAsked).toEqual([]);
+    expect(request.declineReason).toBe('');
+    expect(decodeService(serviceJson(), 'service').needed).toEqual([]);
+    expect(decodeLiveState(liveJson(), 'live').itemStartedAt).toBeNull();
+  });
+
+  it('reads who can fill a position', () => {
+    expect(decodePosition(positionJson({ member_ids: [1, 2] }), 'position').memberIds).toEqual([
+      1, 2,
+    ]);
+  });
+
+  it('reads a request with its decline reason and the other requests at the service', () => {
+    const request = decodeScheduleRequest(
+      requestJson({
+        status: 'declined',
+        decline_reason: 'Away that weekend',
+        also_asked: [
+          {
+            position: positionJson({ id: 11, name: 'Keys' }),
+            team_name: 'Worship band',
+            status: 'pending',
+          },
+        ],
+      }),
+      'request',
+    );
+    expect(request.declineReason).toBe('Away that weekend');
+    expect(request.alsoAsked).toEqual([
+      {
+        position: { id: 11, teamId: 5, name: 'Keys', memberIds: [] },
+        teamName: 'Worship band',
+        status: 'pending',
+      },
+    ]);
+  });
+
+  it('reads the positions a plan needs', () => {
+    const service = decodeService(
+      serviceJson({ needed: [needJson({ count: 2, accepted: 1, open: 1 })] }),
+      'service',
+    );
+    expect(service.needed).toEqual([
+      {
+        position: { id: 10, teamId: 5, name: 'Drums', memberIds: [] },
+        teamName: 'Worship band',
+        count: 2,
+        accepted: 1,
+        pending: 0,
+        declined: 0,
+        open: 1,
+      },
+    ]);
+  });
+
+  it('reads when the current live item started', () => {
+    expect(
+      decodeLiveState(liveJson({ item_started_at: '2026-11-15T09:00:00Z' }), 'live').itemStartedAt,
+    ).toBe('2026-11-15T09:00:00Z');
+  });
+
+  it('reads a candidate with every warning', () => {
+    const candidate = decodeCandidate(
+      candidateJson({
+        blocked: true,
+        conflicts: [
+          {
+            service_id: 21,
+            service_title: 'Evening service',
+            starts_at: '2026-11-15T18:00:00+01:00',
+            team_name: 'Worship band',
+            position_name: 'Keys',
+            status: 'accepted',
+          },
+        ],
+        declined_here: true,
+        last_served_on: '2026-10-04',
+        times_served_90_days: 3,
+      }),
+      'candidate',
+    );
+    expect(candidate).toEqual({
+      person: { id: 1, name: 'Anna de Vries', email: null },
+      blocked: true,
+      alsoAsked: [],
+      conflicts: [
+        {
+          serviceId: 21,
+          serviceTitle: 'Evening service',
+          startsAt: '2026-11-15T18:00:00+01:00',
+          teamName: 'Worship band',
+          positionName: 'Keys',
+          status: 'accepted',
+        },
+      ],
+      declinedHere: true,
+      lastServedOn: '2026-10-04',
+      timesServed90Days: 3,
+    });
+  });
+
+  it('refuses a candidate without the fields the contract gives it', () => {
+    expect(() => decodeCandidate(candidateJson({ declined_here: undefined }), 'c')).toThrow(
+      'c.declined_here: expected a boolean',
+    );
   });
 });

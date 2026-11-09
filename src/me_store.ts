@@ -1,6 +1,6 @@
 /**
  * Who the person at this browser says they are. There is no login yet: this
- * is a choice kept in localStorage so My requests and live control know whom
+ * is a choice kept in localStorage so My schedule and live control know whom
  * to act for, and it is only as trustworthy as the person who made it.
  */
 import { useSyncExternalStore } from 'react';

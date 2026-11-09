@@ -396,8 +396,7 @@ summary {
 }
 
 .chip-list,
-.arrangement-list,
-.request-list {
+.arrangement-list {
   margin: 0 0 0.75rem;
   padding: 0;
   list-style: none;
@@ -415,8 +414,7 @@ summary {
   background: var(--neutral-bg);
 }
 
-.arrangement-list li,
-.request-list li {
+.arrangement-list li {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -650,4 +648,231 @@ button.big {
   .plan-time {
     flex-basis: 3rem;
   }
+}
+
+/* v0.2 scheduling: the plan's Teams section */
+
+.team-group h3 {
+  margin-bottom: 0.5rem;
+}
+
+.slot-list,
+.slot-people,
+.candidate-list,
+.badge-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.slot-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.slot {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+}
+
+.slot-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.75rem;
+}
+
+.slot-head h4 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.slot-people {
+  margin: 0.5rem 0 0.75rem;
+}
+
+.slot-people li {
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.open-slot {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.candidates {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.candidate {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: start;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.candidate-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.75rem;
+}
+
+.badge-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.needed-team {
+  margin: 0 0 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.needed-team input {
+  max-width: 6rem;
+}
+
+/* v0.2 scheduling: who can fill each position */
+
+.position-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  list-style: none;
+}
+
+.position-members {
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.position-members h4 {
+  margin: 0 0 0.35rem;
+}
+
+.chip-remove {
+  min-height: 1.75rem;
+  margin-left: 0.5rem;
+  padding: 0 0.5rem;
+  font-size: 0.85rem;
+}
+
+/* v0.2 scheduling: the Matrix */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.matrix-scroll {
+  overflow-x: auto;
+  margin: 1rem 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.matrix {
+  border-collapse: collapse;
+  min-width: 100%;
+  font-size: 0.9rem;
+}
+
+.matrix th,
+.matrix td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.matrix thead th {
+  min-width: 9rem;
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+}
+
+.matrix th[scope='row'] {
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  white-space: nowrap;
+}
+
+.matrix-team th {
+  background: var(--neutral-bg);
+  font-weight: 700;
+}
+
+.matrix-date {
+  display: block;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.matrix-cell {
+  display: grid;
+  gap: 0.2rem;
+  min-height: 2.5rem;
+  padding: 0.2rem;
+  border-radius: var(--radius);
+  color: inherit;
+  text-decoration: none;
+}
+
+.matrix-cell:hover {
+  background: var(--neutral-bg);
+}
+
+.matrix-person {
+  overflow-wrap: anywhere;
+}
+
+/* v0.2 scheduling: My schedule */
+
+.reason-form {
+  margin-top: 0.75rem;
+}
+
+/* v0.2 scheduling: live timers */
+
+.live-timer {
+  margin: -0.5rem 0 1rem;
+}
+
+.countdown {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.countdown-value {
+  font-size: clamp(2.5rem, 10vw, 4.5rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.countdown.over .countdown-value,
+.countdown.over .live-label {
+  color: var(--error);
 }

@@ -10,11 +10,14 @@ import {
 import { DecodeError } from './decode';
 import {
   blockoutJson,
+  candidateJson,
   itemJson,
   liveJson,
   personJson,
+  positionJson,
   requestJson,
   serviceJson,
+  serviceSummaryJson,
   songJson,
   teamJson,
 } from './test_fixtures';
@@ -269,6 +272,78 @@ describe('the requests the client sends', () => {
       answer: undefined,
       run: (client) => client.endLive(20),
       want: { url: '/api/services/20/live', method: 'DELETE', body: undefined },
+    },
+    // v0.2 scheduling
+    {
+      name: 'addPositionMember',
+      answer: positionJson({ member_ids: [1] }),
+      run: (client) => client.addPositionMember(10, 1),
+      want: { url: '/api/positions/10/members', method: 'POST', body: { person_id: 1 } },
+    },
+    {
+      name: 'removePositionMember',
+      answer: undefined,
+      run: (client) => client.removePositionMember(10, 1),
+      want: { url: '/api/positions/10/members/1', method: 'DELETE', body: undefined },
+    },
+    {
+      name: 'setNeeded',
+      answer: serviceJson(),
+      run: (client) =>
+        client.setNeeded(20, [
+          { positionId: 10, count: 2 },
+          { positionId: 11, count: 0 },
+        ]),
+      want: {
+        url: '/api/services/20/needed',
+        method: 'PUT',
+        body: {
+          needed: [
+            { position_id: 10, count: 2 },
+            { position_id: 11, count: 0 },
+          ],
+        },
+      },
+    },
+    {
+      name: 'listCandidates',
+      answer: [candidateJson()],
+      run: (client) => client.listCandidates(20, 10),
+      want: { url: '/api/services/20/candidates?position_id=10', method: 'GET', body: undefined },
+    },
+    {
+      name: 'listServicesFrom',
+      answer: [serviceSummaryJson()],
+      run: (client) => client.listServicesFrom('2026-11-09'),
+      want: { url: '/api/services?from=2026-11-09', method: 'GET', body: undefined },
+    },
+    {
+      name: 'declineRequest with a reason',
+      answer: requestJson({ status: 'declined' }),
+      run: (client) => client.declineRequest(50, 'Away that weekend'),
+      want: {
+        url: '/api/requests/50/answer',
+        method: 'POST',
+        body: { accept: false, reason: 'Away that weekend' },
+      },
+    },
+    {
+      name: 'declineRequest without a reason',
+      answer: requestJson({ status: 'declined' }),
+      run: (client) => client.declineRequest(50, ''),
+      want: { url: '/api/requests/50/answer', method: 'POST', body: { accept: false } },
+    },
+    {
+      name: 'withdrawRequest with a reason',
+      answer: requestJson({ status: 'declined' }),
+      run: (client) => client.withdrawRequest(50, 'Ill'),
+      want: { url: '/api/requests/50/withdraw', method: 'POST', body: { reason: 'Ill' } },
+    },
+    {
+      name: 'withdrawRequest without a reason',
+      answer: requestJson({ status: 'declined' }),
+      run: (client) => client.withdrawRequest(50, ''),
+      want: { url: '/api/requests/50/withdraw', method: 'POST', body: {} },
     },
   ])('$name', async ({ answer, run, want }) => {
     const { client, sent } = clientAnswering(answer === undefined ? 204 : 200, answer);

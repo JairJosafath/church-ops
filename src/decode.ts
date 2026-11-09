@@ -88,3 +88,22 @@ export function field<T>(
 ): T {
   return decode(record[key], `${path}.${key}`);
 }
+
+// v0.2 scheduling
+// The same helper as the songs and plans branch's (#8, #10), so a merge keeps one copy.
+
+/**
+ * Reads the field `key` of `record` with `decode`, or gives `fallback` when
+ * the field is missing. Only for fields CONTRACT.md marks new in v0.2, so the
+ * page still works against an api that does not send them yet; a field that
+ * is there but of the wrong shape still throws.
+ */
+export function fieldOr<T>(
+  record: Record<string, unknown>,
+  key: string,
+  decode: Decoder<T>,
+  fallback: T,
+  path: string,
+): T {
+  return record[key] === undefined ? fallback : decode(record[key], `${path}.${key}`);
+}

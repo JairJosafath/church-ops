@@ -6,6 +6,7 @@
 import {
   decodeArrangement,
   decodeBlockout,
+  decodeCandidate,
   decodeItem,
   decodeLiveState,
   decodePerson,
@@ -17,6 +18,7 @@ import {
   decodeTeam,
   type Arrangement,
   type Blockout,
+  type Candidate,
   type Item,
   type ItemKind,
   type LiveState,
@@ -83,6 +85,13 @@ export type NewBlockout = Omit<Blockout, 'id' | 'personId'>;
 
 type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
+// v0.2 scheduling
+/** How many people a plan needs in a position; a count of 0 removes the need. */
+export interface NeededCount {
+  readonly positionId: number;
+  readonly count: number;
+}
+
 /** Every route of the api the page uses. */
 export interface ApiClient {
   listPeople(signal?: AbortSignal): Promise<Person[]>;
@@ -113,6 +122,17 @@ export interface ApiClient {
   advanceLive(serviceId: number, personId: number, toIndex: number): Promise<LiveState>;
   handOver(serviceId: number, fromPersonId: number, toPersonId: number): Promise<LiveState>;
   endLive(serviceId: number): Promise<void>;
+  // v0.2 scheduling
+  addPositionMember(positionId: number, personId: number): Promise<Position>;
+  removePositionMember(positionId: number, personId: number): Promise<void>;
+  setNeeded(serviceId: number, needed: readonly NeededCount[]): Promise<Service>;
+  listCandidates(serviceId: number, positionId: number, signal?: AbortSignal): Promise<Candidate[]>;
+  /** The services from `from` ("YYYY-MM-DD") on, by start. */
+  listServicesFrom(from: string, signal?: AbortSignal): Promise<ServiceSummary[]>;
+  /** Declines a pending request; `reason` "" gives none. */
+  declineRequest(requestId: number, reason: string): Promise<ScheduleRequest>;
+  /** Declines a request the person had accepted; `reason` "" gives none. */
+  withdrawRequest(requestId: number, reason: string): Promise<ScheduleRequest>;
 }
 
 /** FastAPI's `detail`: a string, or for a 422 a list of `{msg}` per field. */
@@ -320,6 +340,46 @@ export function createApiClient(fetchLike: FetchLike, base: string): ApiClient {
     endLive: async (serviceId) => {
       await send('DELETE', `${service(serviceId)}/live`);
     },
+    // v0.2 scheduling
+    addPositionMember: (positionId, personId) =>
+      call(decodePosition, 'POST', `/positions/${String(positionId)}/members`, {
+        person_id: personId,
+      }),
+    removePositionMember: async (positionId, personId) => {
+      await send('DELETE', `/positions/${String(positionId)}/members/${String(personId)}`);
+    },
+    setNeeded: (serviceId, needed) =>
+      call(decodeService, 'PUT', `${service(serviceId)}/needed`, {
+        needed: needed.map((need) => ({ position_id: need.positionId, count: need.count })),
+      }),
+    listCandidates: (serviceId, positionId, signal) =>
+      call(
+        arrayOf(decodeCandidate),
+        'GET',
+        `${service(serviceId)}/candidates?position_id=${String(positionId)}`,
+        undefined,
+        signal,
+      ),
+    listServicesFrom: (from, signal) =>
+      call(
+        arrayOf(decodeServiceSummary),
+        'GET',
+        `/services?from=${encodeURIComponent(from)}`,
+        undefined,
+        signal,
+      ),
+    declineRequest: (requestId, reason) =>
+      call(decodeScheduleRequest, 'POST', `/requests/${String(requestId)}/answer`, {
+        accept: false,
+        ...(reason === '' ? {} : { reason }),
+      }),
+    withdrawRequest: (requestId, reason) =>
+      call(
+        decodeScheduleRequest,
+        'POST',
+        `/requests/${String(requestId)}/withdraw`,
+        reason === '' ? {} : { reason },
+      ),
   };
 }
 

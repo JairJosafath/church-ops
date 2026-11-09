@@ -2,12 +2,11 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { decodePerson } from './api_types';
 import { ServicePage } from './service_page';
 import { fakeApi, type FakeApi } from './test_fetch';
 import {
-  blockoutJson,
   itemJson,
+  needJson,
   personJson,
   requestJson,
   serviceJson,
@@ -15,9 +14,6 @@ import {
   songJson,
   teamJson,
 } from './test_fixtures';
-
-const ANNA = decodePerson(personJson(), 'person');
-const BEN = decodePerson(personJson({ id: 2, name: 'Ben Bakker' }), 'person');
 
 const SERVICE = serviceJson({
   items: [
@@ -29,19 +25,18 @@ const SERVICE = serviceJson({
   requests: [
     requestJson({ status: 'accepted', person: personJson({ id: 2, name: 'Ben Bakker' }) }),
   ],
+  needed: [needJson({ count: 1, accepted: 1, open: 0 })],
 });
 
-function renderPage(routes: Parameters<typeof fakeApi>[0] = {}): FakeApi {
+function renderPage(routes: Parameters<typeof fakeApi>[0] = {}, focusTeams = false): FakeApi {
   const api = fakeApi({
     'GET /api/services/20': { json: SERVICE },
     'GET /api/songs': { json: [songJson()] },
     'GET /api/teams': { json: [teamJson()] },
-    'GET /api/people/1/blockouts': { json: [blockoutJson()] },
-    'GET /api/people/2/blockouts': { json: [] },
     ...routes,
   });
   vi.stubGlobal('fetch', api.fetch);
-  render(<ServicePage serviceId={20} people={[ANNA, BEN]} />);
+  render(<ServicePage serviceId={20} focusTeams={focusTeams} />);
   return api;
 }
 
@@ -143,51 +138,19 @@ describe('ServicePage', () => {
     });
   });
 
-  it('warns that a person blocked the date out, never why, and still lets the planner ask', async () => {
-    const api = renderPage({
-      'POST /api/services/20/requests': { status: 201, json: requestJson({ blocked: true }) },
-    });
-    const form = within(await screen.findByRole('form', { name: 'Send a request' }));
-    await screen.findByRole('option', { name: 'Worship band: Drums' });
-    fireEvent.change(form.getByLabelText('Position'), { target: { value: '10' } });
-    fireEvent.change(form.getByLabelText('Person'), { target: { value: '1' } });
-    expect(
-      await form.findByText(/Anna de Vries has blocked out Sunday 15 November 2026/),
-    ).toBeTruthy();
-    expect(screen.queryByText(/Family visit/)).toBeNull();
-    fireEvent.click(form.getByRole('button', { name: 'Send request anyway' }));
-    expect(
-      await screen.findByText(/The request tells them the date is in their blockout/),
-    ).toBeTruthy();
-    expect(api.sent.find((request) => request.method === 'POST')?.body).toEqual({
-      position_id: 10,
-      person_id: 1,
-    });
-  });
-
-  it('does not warn for a person who is free that day', async () => {
+  // v0.2 scheduling
+  it('shows the Teams section with each needed position and its people', async () => {
     renderPage();
-    const form = within(await screen.findByRole('form', { name: 'Send a request' }));
-    await screen.findByRole('option', { name: 'Worship band: Drums' });
-    fireEvent.change(form.getByLabelText('Position'), { target: { value: '10' } });
-    fireEvent.change(form.getByLabelText('Person'), { target: { value: '2' } });
-    expect(await form.findByRole('button', { name: 'Send request' })).toBeTruthy();
-    expect(form.queryByText(/has blocked out/)).toBeNull();
+    expect(await screen.findByRole('heading', { name: 'Teams' })).toBeTruthy();
+    const drums = within(screen.getByRole('list', { name: 'People for Drums' }));
+    expect(drums.getByText('Ben Bakker')).toBeTruthy();
+    expect(drums.getByText('Confirmed')).toBeTruthy();
   });
 
-  it('shows the conflict when the person was already asked', async () => {
-    renderPage({
-      'POST /api/services/20/requests': {
-        status: 409,
-        json: { detail: 'Ben Bakker already has a request for Drums' },
-      },
-    });
-    const form = within(await screen.findByRole('form', { name: 'Send a request' }));
-    await screen.findByRole('option', { name: 'Worship band: Drums' });
-    fireEvent.change(form.getByLabelText('Position'), { target: { value: '10' } });
-    fireEvent.change(form.getByLabelText('Person'), { target: { value: '2' } });
-    fireEvent.click(await form.findByRole('button', { name: 'Send request' }));
-    expect(await form.findByText('Ben Bakker already has a request for Drums')).toBeTruthy();
+  it('puts the focus on the Teams section when opened there', async () => {
+    renderPage({}, true);
+    const heading = await screen.findByRole('heading', { name: 'Teams' });
+    expect(document.activeElement).toBe(heading);
   });
 
   it('says what happened when the plan cannot be loaded', async () => {

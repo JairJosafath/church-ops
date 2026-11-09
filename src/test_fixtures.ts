@@ -153,3 +153,31 @@ export function liveJson(overrides: Json = {}): Json {
     ...overrides,
   };
 }
+
+// v0.2 scheduling
+
+export function needJson(overrides: Json = {}): Json {
+  return {
+    position: positionJson(),
+    team_name: 'Worship band',
+    count: 1,
+    accepted: 0,
+    pending: 0,
+    declined: 0,
+    open: 1,
+    ...overrides,
+  };
+}
+
+export function candidateJson(overrides: Json = {}): Json {
+  return {
+    person: personJson(),
+    blocked: false,
+    also_asked: [],
+    conflicts: [],
+    declined_here: false,
+    last_served_on: null,
+    times_served_90_days: 0,
+    ...overrides,
+  };
+}

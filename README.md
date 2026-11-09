@@ -14,18 +14,35 @@ api:
   have lengths, not clock times: the plan shows each item's start, computed
   from the service's start, and the service's end, in Dutch time. A song item
   names an arrangement and may set its own key; the plan shows the key it is
-  played in. One list, with a view for the band and one for the stream. Send
-  requests to people for positions; a person who blocked the date out is
-  warned about (never with their reason), and may still be asked.
+  played in. One list, with a view for the band and one for the stream.
+- **Teams** (`#/services/<id>/teams` opens a plan at it): the positions the
+  plan needs and how many of each, each with the people asked, their answer
+  (pending, confirmed or declined, with the reason they gave) and the open
+  slots. Find people lists who can fill a position, with a badge for each
+  warning: blocked out (with the reason, shown to the scheduler only), a
+  request at another service the same day, another position at this plan, a
+  decline here; and how often they served lately. A warning never stops the
+  scheduler: Ask anyway sends the request, and the person decides.
+- **Matrix** (`#/matrix`): the next 12 plans across and the positions down,
+  each cell with the people asked and their status, and the open slots.
+  Choosing a cell opens that plan's Teams section.
 - **Songs** (`#/songs`): songs and their arrangements (key, tempo, meter,
   length, sequence, chart).
-- **People** (`#/people`): teams, their positions, and people.
-- **My requests** (`#/me`): accept or decline your pending requests, and add
-  or remove your blockouts. Works at phone width.
+- **People** (`#/people`): teams, their positions, who can fill each
+  position (the people a plan's Find people offers), and people.
+- **My schedule** (`#/me`): your pending requests (accept, or decline with
+  a reason if you want to give one), what you are confirmed for from today on
+  (open the plan, rehearse, or withdraw with a reason when you can't make it
+  after all), what is earlier or answered, and your blockouts. A blockout's
+  reason is shown to the planner who asks you, and nobody else. Works at
+  phone width.
 - **Live mode** (`#/services/<id>/live`): one named person holds control and
   moves the service on with Next and Back; everyone else follows (the page
   asks every second), sees who holds control, and can be handed it. OBS and
-  Ableton show the state the integrations worker reports.
+  Ableton show the state the integrations worker reports. The current item
+  counts down from its length since it became current, and below zero shows
+  how far it ran over; the projected end of the service (that moment, plus
+  the lengths of the items after it) stands next to the planned end.
 
 "You are", at the top, picks the person this browser acts for, kept in
 localStorage. There is no sign-in yet: the api runs with authentication
@@ -68,8 +85,8 @@ API_URL=http://127.0.0.1:8000 npm run dev
 - The logic is in modules that import neither React nor the DOM, tested with
   plain vitest: the running clock (`plan_times.ts`, `dutch_time.ts`), keys
   (`song_keys.ts`), reordering (`reorder.ts`), blockouts (`blockouts.ts`),
-  live control (`live.ts`) and the forms (`item_form.ts`,
-  `arrangement_form.ts`). Tests sit next to them as `*.test.ts`; component
+  live control (`live.ts`), scheduling (`scheduling.ts`, `matrix.ts`) and
+  the forms (`item_form.ts`, `arrangement_form.ts`). Tests sit next to them as `*.test.ts`; component
   tests (`*.test.tsx`) bring their own DOM with jsdom and a fake api
   (`test_fetch.ts`).
 - `public/` is copied into the site as is (the icon).

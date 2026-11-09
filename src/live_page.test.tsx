@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { decodePerson, type Person } from './api_types';
 import { LivePage } from './live_page';
 import { fakeApi, type FakeApi, type Route } from './test_fetch';
-import { itemJson, liveJson, personJson, songItemJson } from './test_fixtures';
+import { itemJson, liveJson, personJson, serviceJson, songItemJson } from './test_fixtures';
 
 const ANNA = decodePerson(personJson(), 'person');
 const BEN = decodePerson(personJson({ id: 2, name: 'Ben Bakker' }), 'person');
@@ -122,7 +122,10 @@ describe('LivePage for a follower', () => {
     expect(nowTitle()).toBe('Psalm 23');
     await elapse(1);
     expect(nowTitle()).toBe('Amazing Grace');
-    expect(api.sentRoutes()).toEqual(['GET /api/services/20/live', 'GET /api/services/20/live']);
+    expect(api.sentRoutes().filter((route) => route.endsWith('/live'))).toEqual([
+      'GET /api/services/20/live',
+      'GET /api/services/20/live',
+    ]);
   });
 
   it('shows the state of OBS and Ableton', async () => {
@@ -157,9 +160,10 @@ describe('LivePage for a follower', () => {
   it('stops polling when the page goes away', async () => {
     const api = renderPage(BEN, { 'GET /api/services/20/live': { json: liveJson() } });
     await elapse(0);
+    const sent = api.sent.length;
     cleanup();
     await elapse(5000);
-    expect(api.sent).toHaveLength(1);
+    expect(api.sent).toHaveLength(sent);
   });
 });
 
@@ -177,5 +181,70 @@ describe('LivePage before the service is live', () => {
       controller_id: 1,
     });
     expect(screen.getByText('You have control.')).toBeTruthy();
+  });
+});
+
+// v0.2 scheduling
+describe('LivePage timers', () => {
+  const PLAN = serviceJson({
+    items: [
+      itemJson({ id: 100, position: 0, length_seconds: 180 }),
+      songItemJson({ position: 1, length_seconds: 300 }),
+      itemJson({ id: 102, position: 2, kind: 'sermon', title: 'Sermon', length_seconds: 1500 }),
+    ],
+    ends_at: '2026-11-15T10:33:00+01:00',
+  });
+
+  function timer(): string | null {
+    return screen.getByRole('timer').textContent;
+  }
+
+  it('counts the current item down, into overtime, and projects the end of the service', async () => {
+    vi.setSystemTime(new Date('2026-11-15T09:01:00Z'));
+    renderPage(BEN, {
+      'GET /api/services/20/live': {
+        json: liveJson({ item_started_at: '2026-11-15T09:00:00Z' }),
+      },
+      'GET /api/services/20': { json: PLAN },
+    });
+    await elapse(0);
+    expect(timer()).toBe('Left2:00');
+    expect(
+      screen.getByText('Projected end', { selector: 'dt' }).nextElementSibling?.textContent,
+    ).toBe('10:33');
+    expect(
+      screen.getByText('Planned end', { selector: 'dt' }).nextElementSibling?.textContent,
+    ).toBe('10:33');
+    await elapse(1000);
+    expect(timer()).toBe('Left1:59');
+    await elapse(179_000);
+    expect(timer()).toBe('Over time−1:00');
+    expect(
+      screen.getByText('Projected end', { selector: 'dt' }).nextElementSibling?.textContent,
+    ).toBe('10:34');
+  });
+
+  it('shows no countdown when the server does not say when the item started', async () => {
+    renderPage(BEN, {
+      'GET /api/services/20/live': { json: liveJson() },
+      'GET /api/services/20': { json: PLAN },
+    });
+    await elapse(0);
+    expect(screen.queryByRole('timer')).toBeNull();
+    expect(
+      screen.getByText(/No countdown: the server did not say when this item started/),
+    ).toBeTruthy();
+  });
+
+  it('still counts down when the plan cannot be loaded, and says why there is no projected end', async () => {
+    vi.setSystemTime(new Date('2026-11-15T09:01:00Z'));
+    renderPage(BEN, {
+      'GET /api/services/20/live': {
+        json: liveJson({ item_started_at: '2026-11-15T09:00:00Z' }),
+      },
+    });
+    await elapse(0);
+    expect(timer()).toBe('Left2:00');
+    expect(screen.getByText(/No projected end: could not load the plan/)).toBeTruthy();
   });
 });

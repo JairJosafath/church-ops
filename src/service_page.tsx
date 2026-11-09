@@ -1,16 +1,8 @@
 import { useCallback, useState, type ReactElement } from 'react';
 
 import { api, type ItemInput } from './api_client';
-import {
-  ITEM_KINDS,
-  type Item,
-  type Person,
-  type Service,
-  type Song,
-  type Team,
-} from './api_types';
-import { isBlockedOn } from './blockouts';
-import { amsterdamDate, formatClock, formatServiceDate } from './dutch_time';
+import { ITEM_KINDS, type Item, type Song } from './api_types';
+import { formatClock, formatServiceDate } from './dutch_time';
 import { ActionNotice, CheckboxField, Notice, SelectField, TextField } from './form_fields';
 import {
   ITEM_KIND_LABELS,
@@ -19,6 +11,7 @@ import {
   type ItemFormErrors,
   type ItemFormFields,
 } from './item_form';
+import { PlanTeams } from './plan_teams';
 import { formatLength, planClock } from './plan_times';
 import { moveItem } from './reorder';
 import { routeHref } from './routes';
@@ -276,129 +269,15 @@ function PlanItem({ item, startsAt, view }: PlanItemProps): ReactElement {
   );
 }
 
-interface RequestFormProps {
-  readonly service: Service;
-  readonly teams: readonly Team[];
-  readonly people: readonly Person[];
-  readonly onSent: () => void;
-}
-
-/**
- * Asks a person to fill a position. A blockout on the service's date is the
- * person's word: the planner is warned, may still ask, and the person decides.
- */
-function RequestForm({ service, teams, people, onSent }: RequestFormProps): ReactElement {
-  const [positionId, setPositionId] = useState('');
-  const [personId, setPersonId] = useState('');
-  const action = useAction();
-  const person = people.find((candidate) => String(candidate.id) === personId) ?? null;
-  const chosenId = person?.id ?? null;
-  const loadBlockouts = useCallback(
-    (signal: AbortSignal) =>
-      chosenId === null ? Promise.resolve([]) : api.listBlockouts(chosenId, signal),
-    [chosenId],
-  );
-  const [blockouts] = useResource(loadBlockouts);
-  const serviceDate = amsterdamDate(service.startsAt);
-  const blocked =
-    blockouts.status === 'ready' &&
-    serviceDate !== null &&
-    isBlockedOn(blockouts.value, serviceDate);
-  const positions = teams.flatMap((team) => team.positions.map((position) => ({ team, position })));
-  const chosen = positions.find(({ position }) => String(position.id) === positionId);
-
-  return (
-    <form
-      noValidate
-      className="panel"
-      aria-labelledby="request-heading"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (person === null || chosen === undefined) {
-          return;
-        }
-        void action
-          .run(async () => {
-            const request = await api.createRequest(service.id, chosen.position.id, person.id);
-            return (
-              `Asked ${request.person.name} to serve as ${request.position.name} (${request.teamName}).` +
-              (request.blocked ? ' The request tells them the date is in their blockout.' : '')
-            );
-          })
-          .then((sent) => {
-            if (sent) {
-              onSent();
-            }
-          });
-      }}
-    >
-      <h3 id="request-heading">Send a request</h3>
-      <div className="field-row">
-        <SelectField
-          label="Position"
-          value={positionId}
-          onChange={setPositionId}
-          required
-          {...(positions.length === 0
-            ? { hint: 'Add a team and its positions on the People page first.' }
-            : {})}
-        >
-          <option value="">Choose a position</option>
-          {teams.map((team) => (
-            <optgroup key={team.id} label={team.name}>
-              {team.positions.map((position) => (
-                <option key={position.id} value={String(position.id)}>
-                  {team.name}: {position.name}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </SelectField>
-        <SelectField label="Person" value={personId} onChange={setPersonId} required>
-          <option value="">Choose a person</option>
-          {people.map((candidate) => (
-            <option key={candidate.id} value={String(candidate.id)}>
-              {candidate.name}
-            </option>
-          ))}
-        </SelectField>
-      </div>
-      <div aria-live="polite" className="notice-region">
-        {person !== null && blocked ? (
-          <p className="notice warning">
-            {person.name} has blocked out {formatServiceDate(service.startsAt)}. You can still ask:
-            the request will say so, and they decide.
-          </p>
-        ) : null}
-        {person !== null && blockouts.status === 'failed' ? (
-          <p className="notice error">
-            Could not check {person.name}&rsquo;s blockouts. {blockouts.error} The request will
-            still say if the date is blocked.
-          </p>
-        ) : null}
-      </div>
-      <button type="submit" disabled={action.busy || person === null || chosen === undefined}>
-        {blocked ? 'Send request anyway' : 'Send request'}
-      </button>
-      <ActionNotice message={action.message} />
-    </form>
-  );
-}
-
-const STATUS_LABELS = {
-  pending: 'Waiting for an answer',
-  accepted: 'Accepted',
-  declined: 'Declined',
-  cancelled: 'Cancelled',
-} as const;
-
 interface ServicePageProps {
   readonly serviceId: number;
-  readonly people: readonly Person[];
+  // v0.2 scheduling
+  /** Whether the page was opened at its Teams section (from the Matrix). */
+  readonly focusTeams?: boolean;
 }
 
-/** A service's plan: its items with their running clock, and the people asked to serve. */
-export function ServicePage({ serviceId, people }: ServicePageProps): ReactElement {
+/** A service's plan: its items with their running clock, and the teams scheduled to serve. */
+export function ServicePage({ serviceId, focusTeams = false }: ServicePageProps): ReactElement {
   const loadService = useCallback(
     (signal: AbortSignal) => api.getService(serviceId, signal),
     [serviceId],
@@ -631,34 +510,8 @@ export function ServicePage({ serviceId, people }: ServicePageProps): ReactEleme
         </div>
       </section>
 
-      <section aria-labelledby="people-heading">
-        <h2 id="people-heading">People</h2>
-        {plan.requests.length === 0 ? (
-          <p>Nobody has been asked yet.</p>
-        ) : (
-          <ul className="request-list">
-            {plan.requests.map((request) => (
-              <li key={request.id}>
-                <span>
-                  {request.teamName}: {request.position.name}
-                </span>
-                <strong>{request.person.name}</strong>
-                <span className={`badge status-${request.status}`}>
-                  {STATUS_LABELS[request.status]}
-                </span>
-                {request.blocked ? <span className="badge warning">Blocked out</span> : null}
-              </li>
-            ))}
-          </ul>
-        )}
-        {teams.status === 'failed' ? <Notice message={teams.error} tone="error" /> : null}
-        <RequestForm
-          service={plan}
-          teams={teams.status === 'ready' ? teams.value : []}
-          people={people}
-          onSent={reloadService}
-        />
-      </section>
+      {/* v0.2 scheduling */}
+      <PlanTeams service={plan} teams={teams} onChanged={reloadService} focused={focusTeams} />
     </>
   );
 }

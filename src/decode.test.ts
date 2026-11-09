@@ -11,6 +11,7 @@ import {
   isRecord,
   nullable,
   oneOf,
+  fieldOr,
 } from './decode';
 
 describe('isRecord', () => {
@@ -87,5 +88,21 @@ describe('decoders', () => {
   ])('refuses $name', ({ run, message }) => {
     expect(run).toThrow(DecodeError);
     expect(run).toThrow(message);
+  });
+});
+
+// v0.2 scheduling
+describe('fieldOr', () => {
+  it.each([
+    { record: {}, want: [] },
+    { record: { ids: [3, 4] }, want: [3, 4] },
+  ])('reads $record, with the fallback when the field is missing', ({ record, want }) => {
+    expect(fieldOr(record, 'ids', arrayOf(decodeInteger), [], 'p')).toEqual(want);
+  });
+
+  it('still refuses a field that is there with the wrong shape', () => {
+    expect(() => fieldOr({ ids: null }, 'ids', arrayOf(decodeInteger), [], 'p')).toThrow(
+      'p.ids: expected an array',
+    );
   });
 });

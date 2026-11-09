@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseRoute, routeHref, type Route } from './routes';
+import { parseRoute, rehearseHref, routeHref, type Route } from './routes';
 
 describe('parseRoute', () => {
   it.each<{ hash: string; want: Route }>([
@@ -19,6 +19,11 @@ describe('parseRoute', () => {
     { hash: '#/services/1e3', want: { page: 'not_found' } },
     { hash: '#/services/12/edit', want: { page: 'not_found' } },
     { hash: '#/nowhere', want: { page: 'not_found' } },
+    // v0.2 scheduling
+    { hash: '#/matrix', want: { page: 'matrix' } },
+    { hash: '#/services/12/teams', want: { page: 'service_teams', serviceId: 12 } },
+    { hash: '#/services/12/teams/', want: { page: 'service_teams', serviceId: 12 } },
+    { hash: '#/services/0/teams', want: { page: 'not_found' } },
   ])('reads "$hash"', ({ hash, want }) => {
     expect(parseRoute(hash)).toEqual(want);
   });
@@ -33,10 +38,20 @@ describe('routeHref', () => {
     { route: { page: 'people' }, want: '#/people' },
     { route: { page: 'me' }, want: '#/me' },
     { route: { page: 'not_found' }, want: '#/services' },
+    // v0.2 scheduling
+    { route: { page: 'matrix' }, want: '#/matrix' },
+    { route: { page: 'service_teams', serviceId: 3 }, want: '#/services/3/teams' },
   ])('links to $want', ({ route, want }) => {
     expect(routeHref(route)).toBe(want);
     if (route.page !== 'not_found') {
       expect(parseRoute(want)).toEqual(route);
     }
+  });
+});
+
+// v0.2 scheduling
+describe('rehearseHref', () => {
+  it('links to the rehearse page of a service', () => {
+    expect(rehearseHref(3)).toBe('#/services/3/rehearse');
   });
 });

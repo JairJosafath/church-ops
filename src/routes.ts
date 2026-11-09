@@ -6,9 +6,15 @@ export type Route =
   | { readonly page: 'songs' }
   | { readonly page: 'people' }
   | { readonly page: 'me' }
+  // v0.2 scheduling
+  | { readonly page: 'matrix' }
+  | { readonly page: 'service_teams'; readonly serviceId: number }
   | { readonly page: 'not_found' };
 
 const SERVICE_PATTERN = /^\/services\/([1-9]\d*)(\/live)?$/;
+
+// v0.2 scheduling
+const SERVICE_TEAMS_PATTERN = /^\/services\/([1-9]\d*)\/teams$/;
 
 /** The route a location hash ("#/services/12/live") names. */
 export function parseRoute(hash: string): Route {
@@ -24,7 +30,16 @@ export function parseRoute(hash: string): Route {
       return { page: 'people' };
     case '/me':
       return { page: 'me' };
+    // v0.2 scheduling
+    case '/matrix':
+      return { page: 'matrix' };
     default: {
+      // v0.2 scheduling
+      const teams = SERVICE_TEAMS_PATTERN.exec(path);
+      if (teams !== null) {
+        return { page: 'service_teams', serviceId: Number(teams[1]) };
+      }
+
       const match = SERVICE_PATTERN.exec(path);
       if (match === null) {
         return { page: 'not_found' };
@@ -51,5 +66,19 @@ export function routeHref(route: Route): string {
       return '#/people';
     case 'me':
       return '#/me';
+    // v0.2 scheduling
+    case 'matrix':
+      return '#/matrix';
+    case 'service_teams':
+      return `#/services/${String(route.serviceId)}/teams`;
   }
+}
+
+// v0.2 scheduling
+/**
+ * The link to a service's rehearse page. The route itself comes with the
+ * songs and charts work (#8, #10); My schedule only links to it.
+ */
+export function rehearseHref(serviceId: number): string {
+  return `#/services/${String(serviceId)}/rehearse`;
 }

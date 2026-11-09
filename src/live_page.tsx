@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from 'react';
+import { useCallback, useState, type ReactElement } from 'react';
 
 import { api } from './api_client';
 import type { Devices, Item, LiveState, Person } from './api_types';
@@ -6,10 +6,13 @@ import { formatClock } from './dutch_time';
 import { ActionNotice, Notice, SelectField } from './form_fields';
 import { ITEM_KIND_LABELS } from './item_form';
 import { backIndex, deviceBadge, liveRole, nextIndex } from './live';
+import { formatCountdown, projectedEnd, secondsAfter, secondsLeft } from './live_timer';
 import { formatLength } from './plan_times';
 import { routeHref } from './routes';
 import { useAction } from './use_action';
+import { useNowSeconds } from './use_clock';
 import { useLive } from './use_live';
+import { useResource } from './use_resource';
 
 function DeviceBadges({ devices }: { readonly devices: Devices }): ReactElement {
   const obs = deviceBadge(devices.obs);
@@ -63,6 +66,61 @@ function LiveItem({ item, label, prominent }: LiveItemProps): ReactElement {
         </>
       )}
     </section>
+  );
+}
+
+// v0.2 scheduling
+/**
+ * The current item's countdown, into overtime below zero, and the projected
+ * end of the service from the plan's items after it.
+ */
+function LiveTimer({ live }: { readonly live: LiveState }): ReactElement | null {
+  const nowMs = useNowSeconds() * 1000;
+  const serviceId = live.serviceId;
+  const loadPlan = useCallback(
+    (signal: AbortSignal) => api.getService(serviceId, signal),
+    [serviceId],
+  );
+  const [plan] = useResource(loadPlan);
+  const current = live.current;
+  if (current === null) {
+    return null;
+  }
+  const left = secondsLeft(live.itemStartedAt, current.lengthSeconds, nowMs);
+  if (left === null) {
+    return <p className="muted">No countdown: the server did not say when this item started.</p>;
+  }
+  const end =
+    plan.status === 'ready'
+      ? projectedEnd(
+          live.itemStartedAt,
+          current.lengthSeconds,
+          secondsAfter(plan.value.items, current.position),
+          nowMs,
+        )
+      : null;
+  return (
+    <div className="live-timer">
+      <p role="timer" className={left < 0 ? 'countdown over' : 'countdown'}>
+        <span className="live-label">{left < 0 ? 'Over time' : 'Left'}</span>
+        <span className="countdown-value">{formatCountdown(left)}</span>
+      </p>
+      {plan.status === 'ready' ? (
+        <dl className="summary">
+          <div>
+            <dt>Projected end</dt>
+            <dd>{end === null ? '--:--' : formatClock(end)}</dd>
+          </div>
+          <div>
+            <dt>Planned end</dt>
+            <dd>{formatClock(plan.value.endsAt)}</dd>
+          </div>
+        </dl>
+      ) : null}
+      {plan.status === 'failed' ? (
+        <Notice message={`No projected end: could not load the plan. ${plan.error}`} tone="error" />
+      ) : null}
+    </div>
   );
 }
 
@@ -314,6 +372,7 @@ export function LivePage({ serviceId, me, people }: LivePageProps): ReactElement
           <div aria-live="polite">
             <LiveItem item={live.current} label="Now" prominent />
           </div>
+          <LiveTimer live={live} />
           <LiveItem item={live.next} label="Next" prominent={false} />
           {role === 'controller' && me !== null ? (
             <ControllerControls live={live} me={me} people={people} apply={apply} />

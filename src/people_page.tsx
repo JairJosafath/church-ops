@@ -1,8 +1,8 @@
 import { useCallback, useState, type ReactElement } from 'react';
 
 import { api } from './api_client';
-import type { Person, Team } from './api_types';
-import { ActionNotice, Notice, TextField } from './form_fields';
+import type { Person, Position, Team } from './api_types';
+import { ActionNotice, Notice, SelectField, TextField } from './form_fields';
 import { useAction } from './use_action';
 import { useResource } from './use_resource';
 
@@ -49,11 +49,98 @@ function NameForm({ label, submitLabel, formLabel, onCreate }: NameFormProps): R
   );
 }
 
+// v0.2 scheduling
+interface PositionMembersProps {
+  readonly position: Position;
+  readonly people: readonly Person[];
+  readonly onChanged: () => void;
+}
+
+/** Who can fill a position: the people the plan's Teams section offers for it. */
+function PositionMembers({ position, people, onChanged }: PositionMembersProps): ReactElement {
+  const [personId, setPersonId] = useState('');
+  const action = useAction();
+  const members = people.filter((person) => position.memberIds.includes(person.id));
+  const others = people.filter((person) => !position.memberIds.includes(person.id));
+  return (
+    <li className="position-members">
+      <h4>{position.name}</h4>
+      {members.length === 0 ? (
+        <p>Nobody can fill {position.name} yet.</p>
+      ) : (
+        <ul className="chip-list" aria-label={`Who can fill ${position.name}`}>
+          {members.map((person) => (
+            <li key={person.id} className="chip">
+              {person.name}
+              <button
+                type="button"
+                className="chip-remove"
+                disabled={action.busy}
+                aria-label={`Remove ${person.name} from ${position.name}`}
+                onClick={() => {
+                  void action
+                    .run(async () => {
+                      await api.removePositionMember(position.id, person.id);
+                      return `${person.name} no longer fills ${position.name}.`;
+                    })
+                    .then(onChanged);
+                }}
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {others.length === 0 ? null : (
+        <form
+          noValidate
+          className="inline-form"
+          aria-label={`Add someone who can fill ${position.name}`}
+          onSubmit={(event) => {
+            event.preventDefault();
+            const person = others.find((candidate) => String(candidate.id) === personId);
+            if (person === undefined) {
+              return;
+            }
+            void action
+              .run(async () => {
+                await api.addPositionMember(position.id, person.id);
+                return `${person.name} can fill ${position.name} now.`;
+              })
+              .then((added) => {
+                if (added) {
+                  setPersonId('');
+                }
+                onChanged();
+              });
+          }}
+        >
+          <SelectField label={`Add to ${position.name}`} value={personId} onChange={setPersonId}>
+            <option value="">Choose a person</option>
+            {others.map((person) => (
+              <option key={person.id} value={String(person.id)}>
+                {person.name}
+              </option>
+            ))}
+          </SelectField>
+          <button type="submit" className="secondary" disabled={action.busy || personId === ''}>
+            Add
+          </button>
+        </form>
+      )}
+      <ActionNotice message={action.message} />
+    </li>
+  );
+}
+
 function TeamCard({
   team,
+  people,
   onChanged,
 }: {
   readonly team: Team;
+  readonly people: readonly Person[];
   readonly onChanged: () => void;
 }): ReactElement {
   return (
@@ -62,11 +149,14 @@ function TeamCard({
       {team.positions.length === 0 ? (
         <p>No positions yet.</p>
       ) : (
-        <ul className="chip-list">
+        <ul className="position-list">
           {team.positions.map((position) => (
-            <li key={position.id} className="chip">
-              {position.name}
-            </li>
+            <PositionMembers
+              key={position.id}
+              position={position}
+              people={people}
+              onChanged={onChanged}
+            />
           ))}
         </ul>
       )}
@@ -142,7 +232,7 @@ interface PeoplePageProps {
   readonly onPeopleChanged: () => void;
 }
 
-/** Teams with their positions, and the people who can be asked to serve. */
+/** Teams with their positions and who can fill each, and the people who can be asked to serve. */
 export function PeoplePage({ people, onPeopleChanged }: PeoplePageProps): ReactElement {
   const load = useCallback((signal: AbortSignal) => api.listTeams(signal), []);
   const [teams, reloadTeams] = useResource(load);
@@ -169,7 +259,7 @@ export function PeoplePage({ people, onPeopleChanged }: PeoplePageProps): ReactE
         {teams.status === 'ready' ? (
           <ul className="card-list">
             {teams.value.map((team) => (
-              <TeamCard key={team.id} team={team} onChanged={reloadTeams} />
+              <TeamCard key={team.id} team={team} people={people} onChanged={reloadTeams} />
             ))}
           </ul>
         ) : null}
