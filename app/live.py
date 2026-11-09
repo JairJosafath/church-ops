@@ -46,8 +46,12 @@ def state(source: store.Store, service_id: int) -> models.LiveState:
         return views.live_state(tx, _found_live(tx, service_id))
 
 
-def start(source: store.Store, service_id: int, body: models.LiveStart) -> models.LiveState:
+def start(
+    source: store.Store, service_id: int, body: models.LiveStart, now: datetime
+) -> models.LiveState:
     """Put a service in live mode at its first item, under the controller's control.
+
+    The first item is recorded as started now.
 
     Raises:
         errors.NotFoundError: when there is no such service or person.
@@ -59,7 +63,8 @@ def start(source: store.Store, service_id: int, body: models.LiveStart) -> model
         if tx.live(service_id) is not None:
             msg = f"service {service_id} is live already"
             raise errors.ConflictError(msg)
-        if not tx.items(service_id):
+        service_items = tx.items(service_id)
+        if not service_items:
             msg = f"service {service_id} has no items to run"
             raise errors.ConflictError(msg)
         live = records.Live(
@@ -70,15 +75,20 @@ def start(source: store.Store, service_id: int, body: models.LiveStart) -> model
             obs=records.DeviceState.UNKNOWN,
             ableton=records.DeviceState.UNKNOWN,
             devices_updated_at=None,
+            item_started_at=now,
         )
         tx.add_live(live)
+        tx.add_item_start(service_id, records.ItemStart(service_items[0].id, now))
         return views.live_state(tx, live)
 
 
-def advance(source: store.Store, service_id: int, body: models.Advance) -> models.LiveState:
+def advance(
+    source: store.Store, service_id: int, body: models.Advance, now: datetime
+) -> models.LiveState:
     """Move the current item to another position; the version goes up when it moves.
 
-    Moving back is how an advance is undone.
+    Moving back is how an advance is undone. When the item moves, the new current item
+    is recorded as started now.
 
     Raises:
         errors.NotFoundError: when the service is not live.
@@ -88,15 +98,19 @@ def advance(source: store.Store, service_id: int, body: models.Advance) -> model
     with source.write() as tx:
         live = _found_live(tx, service_id)
         _check_controller(tx, live, body.person_id)
-        count = len(tx.items(service_id))
+        service_items = tx.items(service_id)
+        count = len(service_items)
         if body.to_index >= count:
             msg = (
                 f"to_index {body.to_index} is out of range; service {service_id} has {count} items"
             )
             raise errors.InvalidError(msg)
         if body.to_index != live.current_index:
-            live = dataclasses.replace(live, current_index=body.to_index, version=live.version + 1)
+            live = dataclasses.replace(
+                live, current_index=body.to_index, version=live.version + 1, item_started_at=now
+            )
             tx.update_live(live)
+            tx.add_item_start(service_id, records.ItemStart(service_items[body.to_index].id, now))
         return views.live_state(tx, live)
 
 

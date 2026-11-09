@@ -62,7 +62,12 @@ def test_a_team_lists_its_positions(api: TestClient) -> None:
     team_id = team.json()["id"]
     drums = api.post(f"/teams/{team_id}/positions", json={"name": "Drums"})
     assert drums.status_code == 201
-    assert drums.json() == {"id": drums.json()["id"], "team_id": team_id, "name": "Drums"}
+    assert drums.json() == {
+        "id": drums.json()["id"],
+        "team_id": team_id,
+        "name": "Drums",
+        "member_ids": [],
+    }
     api.post(f"/teams/{team_id}/positions", json={"name": "Keys"})
     api.post("/teams", json={"name": "Sound"})
     teams = api.get("/teams").json()
@@ -93,6 +98,9 @@ def test_a_new_song_has_no_arrangements(api: TestClient) -> None:
         "authors": "",
         "ccli": None,
         "arrangements": [],
+        "tags": [],
+        "last_scheduled_on": None,
+        "times_used_12_months": 0,
     }
 
 
@@ -127,6 +135,9 @@ def test_an_arrangement_takes_the_defaults(api: TestClient) -> None:
         "length_seconds": 240,
         "sequence": "",
         "chart": "",
+        "keys": ["Bb"],
+        "notes": "",
+        "audio_url": None,
     }
     assert api.get(f"/songs/{song_id}").json()["arrangements"] == [arrangement]
 

@@ -21,7 +21,10 @@ from app import (
     routes_catalog,
     routes_live,
     routes_plans,
+    routes_reports,
     routes_scheduling,
+    routes_service_types,
+    routes_staffing,
     store,
 )
 
@@ -111,8 +114,11 @@ def readyz(
 
 api.include_router(routes_catalog.router)
 api.include_router(routes_plans.router)
+api.include_router(routes_service_types.router)
 api.include_router(routes_scheduling.router)
+api.include_router(routes_staffing.router)
 api.include_router(routes_live.router)
+api.include_router(routes_reports.router)
 
 # After the routes: include_router copies the routes api has by now.
 app.include_router(api)

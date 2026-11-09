@@ -49,12 +49,24 @@ def test_a_new_service_has_no_items_and_ends_when_it_starts(api: TestClient) -> 
         "id": service["id"],
         "title": "Sunday morning",
         "service_type": "Sunday morning",
+        "service_type_id": None,
+        "series": "",
         "starts_at": "2026-11-15T10:00:00+01:00",
         "streamed": True,
         "auto_switch": False,
         "items": [],
         "ends_at": "2026-11-15T10:00:00+01:00",
         "requests": [],
+        "needed": [],
+        "times": [
+            {
+                "id": 0,
+                "kind": "service",
+                "name": "Sunday morning",
+                "starts_at": "2026-11-15T10:00:00+01:00",
+                "ends_at": "2026-11-15T10:00:00+01:00",
+            }
+        ],
     }
     assert api.get(f"/services/{service['id']}").json() == service
 
@@ -142,6 +154,8 @@ def test_a_song_item_shows_its_arrangement_in_its_own_key(api: TestClient) -> No
         "lower_third": "Amazing Grace",
         "off_stream": False,
         "notes": "Capo 3",
+        "song_leader": None,
+        "team_notes": [],
     }
     path = f"/services/{service['id']}/items/{item['id']}"
     back = api.patch(path, json={"key": None}).json()
@@ -386,6 +400,8 @@ def test_the_services_are_listed_by_start_from_a_date(api: TestClient) -> None:
             "id": midnight["id"],
             "title": "Midnight",
             "service_type": "Sunday morning",
+            "service_type_id": None,
+            "series": "",
             "starts_at": "2026-11-15T00:30:00+01:00",
             "ends_at": "2026-11-15T00:30:00+01:00",
             "item_count": 0,
@@ -394,6 +410,8 @@ def test_the_services_are_listed_by_start_from_a_date(api: TestClient) -> None:
             "id": later["id"],
             "title": "Later",
             "service_type": "Sunday morning",
+            "service_type_id": None,
+            "series": "",
             "starts_at": "2026-11-22T10:00:00+01:00",
             "ends_at": "2026-11-22T10:15:00+01:00",
             "item_count": 2,

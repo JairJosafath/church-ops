@@ -21,6 +21,13 @@ from app import auth, clock, memory_store, postgres_store, store
 from app.main import app
 
 TABLES = (
+    "live_item_starts",
+    "position_members",
+    "service_needs",
+    "plan_times",
+    "template_needs",
+    "template_items",
+    "service_types",
     "live",
     "notifications",
     "blockouts",

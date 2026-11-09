@@ -1,8 +1,10 @@
 """Routes for people, teams and their positions, and songs and their arrangements."""
 
-from fastapi import APIRouter, status
+from typing import Annotated
 
-from app import catalog, models, store
+from fastapi import APIRouter, Query, status
+
+from app import catalog, clock, models, store
 
 router = APIRouter()
 
@@ -40,21 +42,39 @@ def create_position(
 
 
 @router.get("/songs")
-def list_songs(source: store.Injected) -> list[models.Song]:
-    """List every song with its arrangements, by title."""
-    return catalog.songs(source)
+def list_songs(
+    source: store.Injected,
+    now: clock.Injected,
+    tag: Annotated[
+        list[str] | None, Query(description="Only songs with this tag; repeat for each of several.")
+    ] = None,
+    q: Annotated[
+        str | None,
+        Query(max_length=200, description="Only songs with this in the title, authors or CCLI."),
+    ] = None,
+) -> list[models.Song]:
+    """List the songs with their arrangements, by title; `tag` and `q` narrow the list."""
+    return catalog.songs(source, tag or [], q, now())
 
 
 @router.post("/songs", status_code=status.HTTP_201_CREATED)
-def create_song(body: models.NewSong, source: store.Injected) -> models.Song:
+def create_song(body: models.NewSong, source: store.Injected, now: clock.Injected) -> models.Song:
     """Add a song."""
-    return catalog.add_song(source, body)
+    return catalog.add_song(source, body, now())
 
 
 @router.get("/songs/{song_id}")
-def read_song(song_id: models.PathId, source: store.Injected) -> models.Song:
+def read_song(song_id: models.PathId, source: store.Injected, now: clock.Injected) -> models.Song:
     """Return a song with its arrangements; 404 when there is no such song."""
-    return catalog.song(source, song_id)
+    return catalog.song(source, song_id, now())
+
+
+@router.patch("/songs/{song_id}")
+def change_song(
+    song_id: models.PathId, body: models.SongChanges, source: store.Injected, now: clock.Injected
+) -> models.Song:
+    """Change a song's title, authors, CCLI number or tags."""
+    return catalog.change_song(source, song_id, body, now())
 
 
 @router.post("/songs/{song_id}/arrangements", status_code=status.HTTP_201_CREATED)
@@ -63,3 +83,14 @@ def create_arrangement(
 ) -> models.Arrangement:
     """Add an arrangement to a song; 404 when there is no such song."""
     return catalog.add_arrangement(source, song_id, body)
+
+
+@router.patch("/songs/{song_id}/arrangements/{arrangement_id}")
+def change_arrangement(
+    song_id: models.PathId,
+    arrangement_id: models.PathId,
+    body: models.ArrangementChanges,
+    source: store.Injected,
+) -> models.Arrangement:
+    """Change any field of an arrangement; 404 when it is not one of the song's."""
+    return catalog.change_arrangement(source, song_id, arrangement_id, body)

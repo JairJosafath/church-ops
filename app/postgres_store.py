@@ -1,7 +1,9 @@
 """A store that keeps its records in Postgres, through the app's connection pool.
 
-create_schema() makes the tables when they are missing and leaves them alone when
-they are there, so every start-up runs it. Each transaction borrows one pooled
+create_schema() makes the tables and columns that are missing and leaves the ones
+there alone, so every start-up runs it, and a database made by an earlier version
+is brought up to this one with its records kept. A column added since v0.1 has a
+default that gives the old rows what v0.1 meant. Each transaction borrows one pooled
 connection; a write first takes a transaction-scoped advisory lock, so writes run
 one at a time, and a read runs at REPEATABLE READ, so it sees one state throughout.
 """
@@ -13,6 +15,7 @@ from typing import LiteralString
 
 import psycopg
 from psycopg.rows import DictRow, TupleRow, dict_row
+from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from app import records
@@ -117,7 +120,78 @@ _SCHEMA: tuple[LiteralString, ...] = (
         ableton text NOT NULL,
         devices_updated_at timestamptz
     )""",
+    # v0.2: who can play what, and what a service needs.
+    """CREATE TABLE IF NOT EXISTS position_members (
+        position_id bigint NOT NULL REFERENCES positions (id),
+        person_id bigint NOT NULL REFERENCES people (id),
+        PRIMARY KEY (position_id, person_id)
+    )""",
+    """CREATE TABLE IF NOT EXISTS service_needs (
+        service_id bigint NOT NULL REFERENCES services (id),
+        position_id bigint NOT NULL REFERENCES positions (id),
+        count integer NOT NULL CHECK (count > 0),
+        PRIMARY KEY (service_id, position_id)
+    )""",
+    "ALTER TABLE requests ADD COLUMN IF NOT EXISTS decline_reason text NOT NULL DEFAULT ''",
+    "ALTER TABLE requests ADD COLUMN IF NOT EXISTS scheduler_id bigint REFERENCES people (id)",
+    # v0.2: service types, their templates, and a service's times.
+    """CREATE TABLE IF NOT EXISTS service_types (
+        id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        name text NOT NULL,
+        start_time time NOT NULL,
+        rehearsal_offset_minutes integer
+    )""",
+    """CREATE TABLE IF NOT EXISTS template_items (
+        id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        service_type_id bigint NOT NULL REFERENCES service_types (id),
+        position integer NOT NULL,
+        kind text NOT NULL,
+        title text NOT NULL,
+        length_seconds integer NOT NULL,
+        arrangement_id bigint REFERENCES arrangements (id),
+        key text,
+        scene text,
+        lower_third text,
+        off_stream boolean NOT NULL,
+        notes text NOT NULL,
+        song_leader_id bigint REFERENCES people (id),
+        team_notes jsonb NOT NULL DEFAULT '[]'
+    )""",
+    """CREATE TABLE IF NOT EXISTS template_needs (
+        service_type_id bigint NOT NULL REFERENCES service_types (id),
+        position_id bigint NOT NULL REFERENCES positions (id),
+        count integer NOT NULL CHECK (count > 0),
+        PRIMARY KEY (service_type_id, position_id)
+    )""",
+    """ALTER TABLE services
+        ADD COLUMN IF NOT EXISTS service_type_id bigint REFERENCES service_types (id)""",
+    "ALTER TABLE services ADD COLUMN IF NOT EXISTS series text NOT NULL DEFAULT ''",
+    """CREATE TABLE IF NOT EXISTS plan_times (
+        id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        service_id bigint NOT NULL REFERENCES services (id),
+        kind text NOT NULL,
+        name text NOT NULL,
+        starts_at timestamptz NOT NULL,
+        ends_at timestamptz NOT NULL
+    )""",
+    # v0.2: songs as musicians use them, and items for the team.
+    "ALTER TABLE songs ADD COLUMN IF NOT EXISTS tags text[] NOT NULL DEFAULT '{}'",
+    "ALTER TABLE arrangements ADD COLUMN IF NOT EXISTS keys text[] NOT NULL DEFAULT '{}'",
+    "ALTER TABLE arrangements ADD COLUMN IF NOT EXISTS notes text NOT NULL DEFAULT ''",
+    "ALTER TABLE arrangements ADD COLUMN IF NOT EXISTS audio_url text",
+    "ALTER TABLE items ADD COLUMN IF NOT EXISTS song_leader_id bigint REFERENCES people (id)",
+    "ALTER TABLE items ADD COLUMN IF NOT EXISTS team_notes jsonb NOT NULL DEFAULT '[]'",
+    # v0.2: live timers. An item start keeps its item's id, even once the item is deleted.
+    "ALTER TABLE live ADD COLUMN IF NOT EXISTS item_started_at timestamptz",
+    """CREATE TABLE IF NOT EXISTS live_item_starts (
+        id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        service_id bigint NOT NULL REFERENCES services (id),
+        item_id bigint NOT NULL,
+        started_at timestamptz NOT NULL
+    )""",
+    "CREATE INDEX IF NOT EXISTS live_item_starts_by_service ON live_item_starts (service_id, id)",
 )
+
 
 # How long start-up waits for a connection to create the schema on.
 SCHEMA_TIMEOUT_SECONDS = 30.0
@@ -135,6 +209,9 @@ def _arrangement(row: DictRow) -> records.Arrangement:
             length_seconds=row["length_seconds"],
             sequence=row["sequence"],
             chart=row["chart"],
+            keys=tuple(row["keys"]),
+            notes=row["notes"],
+            audio_url=row["audio_url"],
         ),
     )
 
@@ -148,7 +225,45 @@ def _service(row: DictRow) -> records.Service:
             starts_at=row["starts_at"],
             streamed=row["streamed"],
             auto_switch=row["auto_switch"],
+            service_type_id=row["service_type_id"],
+            series=row["series"],
         ),
+    )
+
+
+def _team_notes(value: object) -> tuple[records.TeamNote, ...]:
+    """Parse a team_notes column, the JSON array _item_values writes.
+
+    Raises:
+        psycopg.DataError: when it holds anything else.
+    """
+    if not isinstance(value, list):
+        msg = f"team_notes holds {value!r}, not a JSON array"
+        raise psycopg.DataError(msg)
+    notes: list[records.TeamNote] = []
+    for entry in value:
+        match entry:
+            case {"team_id": int() as team_id, "note": str() as note}:
+                notes.append(records.TeamNote(team_id=team_id, note=note))
+            case _:
+                msg = f"team_notes holds {entry!r}, not a team_id and a note"
+                raise psycopg.DataError(msg)
+    return tuple(notes)
+
+
+def _item_fields(row: DictRow) -> records.ItemFields:
+    return records.ItemFields(
+        kind=records.ItemKind(row["kind"]),
+        title=row["title"],
+        length_seconds=row["length_seconds"],
+        arrangement_id=row["arrangement_id"],
+        key=row["key"],
+        scene=row["scene"],
+        lower_third=row["lower_third"],
+        off_stream=row["off_stream"],
+        notes=row["notes"],
+        song_leader_id=row["song_leader_id"],
+        team_notes=_team_notes(row["team_notes"]),
     )
 
 
@@ -157,16 +272,30 @@ def _item(row: DictRow) -> records.Item:
         id=row["id"],
         service_id=row["service_id"],
         position=row["position"],
-        fields=records.ItemFields(
-            kind=records.ItemKind(row["kind"]),
-            title=row["title"],
-            length_seconds=row["length_seconds"],
-            arrangement_id=row["arrangement_id"],
-            key=row["key"],
-            scene=row["scene"],
-            lower_third=row["lower_third"],
-            off_stream=row["off_stream"],
-            notes=row["notes"],
+        fields=_item_fields(row),
+    )
+
+
+def _service_type(row: DictRow) -> records.ServiceType:
+    return records.ServiceType(
+        id=row["id"],
+        fields=records.ServiceTypeFields(
+            name=row["name"],
+            start_time=row["start_time"],
+            rehearsal_offset_minutes=row["rehearsal_offset_minutes"],
+        ),
+    )
+
+
+def _plan_time(row: DictRow) -> records.PlanTime:
+    return records.PlanTime(
+        id=row["id"],
+        service_id=row["service_id"],
+        fields=records.PlanTimeFields(
+            kind=records.TimeKind(row["kind"]),
+            name=row["name"],
+            starts_at=row["starts_at"],
+            ends_at=row["ends_at"],
         ),
     )
 
@@ -181,6 +310,8 @@ def _request(row: DictRow) -> records.Request:
         blocked=row["blocked"],
         created_at=row["created_at"],
         answered_at=row["answered_at"],
+        decline_reason=row["decline_reason"],
+        scheduler_id=row["scheduler_id"],
     )
 
 
@@ -205,6 +336,7 @@ def _live(row: DictRow) -> records.Live:
         obs=records.DeviceState(row["obs"]),
         ableton=records.DeviceState(row["ableton"]),
         devices_updated_at=row["devices_updated_at"],
+        item_started_at=row["item_started_at"],
     )
 
 
@@ -221,7 +353,13 @@ def _position(row: DictRow) -> records.Position:
 
 
 def _song(row: DictRow) -> records.Song:
-    return records.Song(id=row["id"], title=row["title"], authors=row["authors"], ccli=row["ccli"])
+    return records.Song(
+        id=row["id"],
+        title=row["title"],
+        authors=row["authors"],
+        ccli=row["ccli"],
+        tags=tuple(row["tags"]),
+    )
 
 
 def _blockout(row: DictRow) -> records.Blockout:
@@ -319,26 +457,84 @@ class PostgresRecords:
             _position(r) for r in self._all("SELECT id, team_id, name FROM positions ORDER BY id")
         ]
 
-    def add_song(self, title: str, authors: str, ccli: str | None) -> records.Song:
+    def add_member(self, membership: records.Membership) -> None:
+        """Record that a person can fill a position; they must not be a member already."""
+        self._conn.execute(
+            "INSERT INTO position_members (position_id, person_id) VALUES (%s, %s)",
+            (membership.position_id, membership.person_id),
+        )
+
+    def delete_member(self, membership: records.Membership) -> bool:
+        """Forget that a person can fill a position; False when they could not."""
+        return (
+            self._count(
+                "DELETE FROM position_members WHERE position_id = %s AND person_id = %s",
+                (membership.position_id, membership.person_id),
+            )
+            > 0
+        )
+
+    def members(self, position_id: int | None) -> list[records.Membership]:
+        """Return who can fill one position, or every position when None, by person id."""
+        rows = self._all(
+            "SELECT position_id, person_id FROM position_members"
+            " WHERE %(position)s::bigint IS NULL OR position_id = %(position)s"
+            " ORDER BY person_id, position_id",
+            {"position": position_id},
+        )
+        return [records.Membership(r["position_id"], r["person_id"]) for r in rows]
+
+    def add_song(
+        self, title: str, authors: str, ccli: str | None, tags: tuple[str, ...]
+    ) -> records.Song:
         """Keep a new song."""
         return _song(
             self._created(
-                "INSERT INTO songs (title, authors, ccli) VALUES (%s, %s, %s)"
-                " RETURNING id, title, authors, ccli",
-                (title, authors, ccli),
+                "INSERT INTO songs (title, authors, ccli, tags) VALUES (%s, %s, %s, %s)"
+                " RETURNING id, title, authors, ccli, tags",
+                (title, authors, ccli, list(tags)),
             )
+        )
+
+    def update_song(self, song: records.Song) -> None:
+        """Replace a song's title, authors, ccli and tags."""
+        self._conn.execute(
+            "UPDATE songs SET title = %s, authors = %s, ccli = %s, tags = %s WHERE id = %s",
+            (song.title, song.authors, song.ccli, list(song.tags), song.id),
         )
 
     def song(self, song_id: int) -> records.Song | None:
         """Return the song with this id."""
-        row = self._one("SELECT id, title, authors, ccli FROM songs WHERE id = %s", (song_id,))
+        row = self._one(
+            "SELECT id, title, authors, ccli, tags FROM songs WHERE id = %s", (song_id,)
+        )
         return None if row is None else _song(row)
 
     def songs(self) -> list[records.Song]:
         """Return every song, by title, then id."""
         return [
             _song(r)
-            for r in self._all("SELECT id, title, authors, ccli FROM songs ORDER BY title, id")
+            for r in self._all(
+                "SELECT id, title, authors, ccli, tags FROM songs ORDER BY title, id"
+            )
+        ]
+
+    def song_uses(self, query: records.SongUseQuery) -> list[records.SongUse]:
+        """Return the song items the query matches, by their service's start, then item id."""
+        rows = self._all(
+            "SELECT a.song_id, i.id AS item_id, s.id AS service_id, s.starts_at"
+            " FROM items i JOIN arrangements a ON a.id = i.arrangement_id"
+            " JOIN services s ON s.id = i.service_id"
+            " WHERE i.kind = 'song'"
+            " AND (%(song)s::bigint IS NULL OR a.song_id = %(song)s)"
+            " AND (%(starting)s::timestamptz IS NULL OR s.starts_at >= %(starting)s)"
+            " AND (%(before)s::timestamptz IS NULL OR s.starts_at < %(before)s)"
+            " ORDER BY s.starts_at, i.id",
+            {"song": query.song_id, "starting": query.starting, "before": query.before},
+        )
+        return [
+            records.SongUse(r["song_id"], r["item_id"], r["service_id"], r["starts_at"])
+            for r in rows
         ]
 
     def add_arrangement(
@@ -347,56 +543,138 @@ class PostgresRecords:
         """Keep a new arrangement of a song."""
         return _arrangement(
             self._created(
-                "INSERT INTO arrangements"
-                " (song_id, name, key, tempo_bpm, meter, length_seconds, sequence, chart)"
-                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
-                " RETURNING id, song_id, name, key, tempo_bpm, meter, length_seconds, sequence, "
-                "chart",
-                (
-                    song_id,
-                    fields.name,
-                    fields.key,
-                    fields.tempo_bpm,
-                    fields.meter,
-                    fields.length_seconds,
-                    fields.sequence,
-                    fields.chart,
-                ),
+                "INSERT INTO arrangements (song_id, name, key, tempo_bpm, meter, length_seconds,"
+                " sequence, chart, keys, notes, audio_url)"
+                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                " RETURNING id, song_id, name, key, tempo_bpm, meter, length_seconds, sequence,"
+                " chart, keys, notes, audio_url",
+                (song_id, *_arrangement_values(fields)),
             )
         )
 
     def arrangement(self, arrangement_id: int) -> records.Arrangement | None:
         """Return the arrangement with this id."""
         row = self._one(
-            "SELECT id, song_id, name, key, tempo_bpm, meter, length_seconds, sequence, chart "
-            "FROM arrangements WHERE id = %s",
+            "SELECT id, song_id, name, key, tempo_bpm, meter, length_seconds, sequence, chart,"
+            " keys, notes, audio_url FROM arrangements WHERE id = %s",
             (arrangement_id,),
         )
         return None if row is None else _arrangement(row)
 
+    def update_arrangement(self, arrangement: records.Arrangement) -> None:
+        """Replace an arrangement's fields."""
+        self._conn.execute(
+            "UPDATE arrangements SET name = %s, key = %s, tempo_bpm = %s, meter = %s,"
+            " length_seconds = %s, sequence = %s, chart = %s, keys = %s, notes = %s,"
+            " audio_url = %s WHERE id = %s",
+            (*_arrangement_values(arrangement.fields), arrangement.id),
+        )
+
     def arrangements(self, song_id: int | None) -> list[records.Arrangement]:
         """Return the arrangements of one song, or of every song when None, by id."""
         rows = self._all(
-            "SELECT id, song_id, name, key, tempo_bpm, meter, length_seconds, sequence, chart "
-            "FROM arrangements"
+            "SELECT id, song_id, name, key, tempo_bpm, meter, length_seconds, sequence, chart,"
+            " keys, notes, audio_url FROM arrangements"
             " WHERE %(song)s::bigint IS NULL OR song_id = %(song)s ORDER BY id",
             {"song": song_id},
         )
         return [_arrangement(r) for r in rows]
 
+    def add_service_type(self, fields: records.ServiceTypeFields) -> records.ServiceType:
+        """Keep a new service type, with an empty template."""
+        return _service_type(
+            self._created(
+                "INSERT INTO service_types (name, start_time, rehearsal_offset_minutes)"
+                " VALUES (%s, %s, %s) RETURNING id, name, start_time, rehearsal_offset_minutes",
+                (fields.name, fields.start_time, fields.rehearsal_offset_minutes),
+            )
+        )
+
+    def service_type(self, service_type_id: int) -> records.ServiceType | None:
+        """Return the service type with this id."""
+        row = self._one(
+            "SELECT id, name, start_time, rehearsal_offset_minutes FROM service_types"
+            " WHERE id = %s",
+            (service_type_id,),
+        )
+        return None if row is None else _service_type(row)
+
+    def service_types(self) -> list[records.ServiceType]:
+        """Return every service type, by name, then id."""
+        rows = self._all(
+            "SELECT id, name, start_time, rehearsal_offset_minutes FROM service_types"
+            " ORDER BY lower(name), id"
+        )
+        return [_service_type(r) for r in rows]
+
+    def update_service_type(self, service_type: records.ServiceType) -> None:
+        """Replace a service type's fields."""
+        fields = service_type.fields
+        self._conn.execute(
+            "UPDATE service_types SET name = %s, start_time = %s, rehearsal_offset_minutes = %s"
+            " WHERE id = %s",
+            (fields.name, fields.start_time, fields.rehearsal_offset_minutes, service_type.id),
+        )
+
+    def template(self, service_type_id: int) -> records.Template:
+        """Return a service type's template; empty when none was set."""
+        items = self._all(
+            "SELECT kind, title, length_seconds, arrangement_id, key, scene, lower_third,"
+            " off_stream, notes, song_leader_id, team_notes FROM template_items"
+            " WHERE service_type_id = %s"
+            " ORDER BY position, id",
+            (service_type_id,),
+        )
+        needs = self._all(
+            "SELECT position_id, count FROM template_needs WHERE service_type_id = %s"
+            " ORDER BY position_id",
+            (service_type_id,),
+        )
+        return records.Template(
+            items=tuple(_item_fields(r) for r in items),
+            needed=tuple(records.Need(r["position_id"], r["count"]) for r in needs),
+        )
+
+    def replace_template(self, service_type_id: int, template: records.Template) -> None:
+        """Replace a service type's template with this one."""
+        self._conn.execute(
+            "DELETE FROM template_items WHERE service_type_id = %s", (service_type_id,)
+        )
+        self._conn.execute(
+            "DELETE FROM template_needs WHERE service_type_id = %s", (service_type_id,)
+        )
+        for position, fields in enumerate(template.items):
+            self._conn.execute(
+                "INSERT INTO template_items (service_type_id, position, kind, title,"
+                " length_seconds, arrangement_id, key, scene, lower_third, off_stream, notes,"
+                " song_leader_id, team_notes)"
+                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (service_type_id, position, *_item_values(fields)),
+            )
+        for need in template.needed:
+            if need.count:
+                self._conn.execute(
+                    "INSERT INTO template_needs (service_type_id, position_id, count)"
+                    " VALUES (%s, %s, %s)",
+                    (service_type_id, need.position_id, need.count),
+                )
+
     def add_service(self, fields: records.ServiceFields) -> records.Service:
         """Keep a new service, with no items."""
         return _service(
             self._created(
-                "INSERT INTO services (title, service_type, starts_at, streamed, auto_switch)"
-                " VALUES (%s, %s, %s, %s, %s)"
-                " RETURNING id, title, service_type, starts_at, streamed, auto_switch",
+                "INSERT INTO services (title, service_type, starts_at, streamed, auto_switch,"
+                " service_type_id, series) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+                " RETURNING id, title, service_type, starts_at, streamed, auto_switch,"
+                " service_type_id, series",
                 (
                     fields.title,
                     fields.service_type,
                     fields.starts_at,
                     fields.streamed,
                     fields.auto_switch,
+                    fields.service_type_id,
+                    fields.series,
                 ),
             )
         )
@@ -404,8 +682,8 @@ class PostgresRecords:
     def service(self, service_id: int) -> records.Service | None:
         """Return the service with this id."""
         row = self._one(
-            "SELECT id, title, service_type, starts_at, streamed, auto_switch"
-            " FROM services WHERE id = %s",
+            "SELECT id, title, service_type, starts_at, streamed, auto_switch, service_type_id,"
+            " series FROM services WHERE id = %s",
             (service_id,),
         )
         return None if row is None else _service(row)
@@ -413,7 +691,8 @@ class PostgresRecords:
     def services(self, starting: datetime | None) -> list[records.Service]:
         """Return the services starting at or after starting (all when None), by start, id."""
         rows = self._all(
-            "SELECT id, title, service_type, starts_at, streamed, auto_switch FROM services"
+            "SELECT id, title, service_type, starts_at, streamed, auto_switch, service_type_id,"
+            " series FROM services"
             " WHERE %(starting)s::timestamptz IS NULL OR starts_at >= %(starting)s"
             " ORDER BY starts_at, id",
             {"starting": starting},
@@ -425,15 +704,69 @@ class PostgresRecords:
         fields = service.fields
         self._conn.execute(
             "UPDATE services SET title = %s, service_type = %s, starts_at = %s, streamed = %s,"
-            " auto_switch = %s WHERE id = %s",
+            " auto_switch = %s, service_type_id = %s, series = %s WHERE id = %s",
             (
                 fields.title,
                 fields.service_type,
                 fields.starts_at,
                 fields.streamed,
                 fields.auto_switch,
+                fields.service_type_id,
+                fields.series,
                 service.id,
             ),
+        )
+
+    def needed(self, service_id: int) -> list[records.Need]:
+        """Return the positions a service needs people in, by position id."""
+        rows = self._all(
+            "SELECT position_id, count FROM service_needs WHERE service_id = %s"
+            " ORDER BY position_id",
+            (service_id,),
+        )
+        return [records.Need(r["position_id"], r["count"]) for r in rows]
+
+    def set_need(self, service_id: int, need: records.Need) -> None:
+        """Set how many people a service needs in a position; a count of 0 forgets the need."""
+        if need.count:
+            self._conn.execute(
+                "INSERT INTO service_needs (service_id, position_id, count) VALUES (%s, %s, %s)"
+                " ON CONFLICT (service_id, position_id) DO UPDATE SET count = EXCLUDED.count",
+                (service_id, need.position_id, need.count),
+            )
+        else:
+            self._conn.execute(
+                "DELETE FROM service_needs WHERE service_id = %s AND position_id = %s",
+                (service_id, need.position_id),
+            )
+
+    def add_time(self, service_id: int, fields: records.PlanTimeFields) -> records.PlanTime:
+        """Keep a new time of a service."""
+        return _plan_time(
+            self._created(
+                "INSERT INTO plan_times (service_id, kind, name, starts_at, ends_at)"
+                " VALUES (%s, %s, %s, %s, %s)"
+                " RETURNING id, service_id, kind, name, starts_at, ends_at",
+                (service_id, fields.kind.value, fields.name, fields.starts_at, fields.ends_at),
+            )
+        )
+
+    def times(self, service_id: int) -> list[records.PlanTime]:
+        """Return the times kept for a service, by start, then id."""
+        rows = self._all(
+            "SELECT id, service_id, kind, name, starts_at, ends_at FROM plan_times"
+            " WHERE service_id = %s ORDER BY starts_at, id",
+            (service_id,),
+        )
+        return [_plan_time(r) for r in rows]
+
+    def delete_time(self, service_id: int, time_id: int) -> bool:
+        """Forget a time of a service; False when the service has none with this id."""
+        return (
+            self._count(
+                "DELETE FROM plan_times WHERE id = %s AND service_id = %s", (time_id, service_id)
+            )
+            > 0
         )
 
     def add_item(self, service_id: int, position: int, fields: records.ItemFields) -> records.Item:
@@ -441,10 +774,10 @@ class PostgresRecords:
         return _item(
             self._created(
                 "INSERT INTO items (service_id, position, kind, title, length_seconds,"
-                " arrangement_id, key, scene, lower_third, off_stream, notes)"
-                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
-                " RETURNING id, service_id, position, kind, title, length_seconds, arrangement_id, "
-                "key, scene, lower_third, off_stream, notes",
+                " arrangement_id, key, scene, lower_third, off_stream, notes, song_leader_id,"
+                " team_notes) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                " RETURNING id, service_id, position, kind, title, length_seconds, arrangement_id,"
+                " key, scene, lower_third, off_stream, notes, song_leader_id, team_notes",
                 (service_id, position, *_item_values(fields)),
             )
         )
@@ -452,8 +785,9 @@ class PostgresRecords:
     def item(self, item_id: int) -> records.Item | None:
         """Return the item with this id."""
         row = self._one(
-            "SELECT id, service_id, position, kind, title, length_seconds, arrangement_id, key, "
-            "scene, lower_third, off_stream, notes FROM items WHERE id = %s",
+            "SELECT id, service_id, position, kind, title, length_seconds, arrangement_id, key,"
+            " scene, lower_third, off_stream, notes, song_leader_id, team_notes FROM items"
+            " WHERE id = %s",
             (item_id,),
         )
         return None if row is None else _item(row)
@@ -461,9 +795,9 @@ class PostgresRecords:
     def items(self, service_id: int) -> list[records.Item]:
         """Return the items of a service, by position."""
         rows = self._all(
-            "SELECT id, service_id, position, kind, title, length_seconds, arrangement_id, key, "
-            "scene, lower_third, off_stream, notes FROM items WHERE service_id = %s ORDER BY "
-            "position, id",
+            "SELECT id, service_id, position, kind, title, length_seconds, arrangement_id, key,"
+            " scene, lower_third, off_stream, notes, song_leader_id, team_notes FROM items"
+            " WHERE service_id = %s ORDER BY position, id",
             (service_id,),
         )
         return [_item(r) for r in rows]
@@ -487,7 +821,7 @@ class PostgresRecords:
         self._conn.execute(
             "UPDATE items SET position = %s, kind = %s, title = %s, length_seconds = %s,"
             " arrangement_id = %s, key = %s, scene = %s, lower_third = %s, off_stream = %s,"
-            " notes = %s WHERE id = %s",
+            " notes = %s, song_leader_id = %s, team_notes = %s WHERE id = %s",
             (item.position, *_item_values(item.fields), item.id),
         )
 
@@ -500,8 +834,9 @@ class PostgresRecords:
         return _request(
             self._created(
                 "INSERT INTO requests (service_id, position_id, person_id, status, blocked,"
-                " created_at) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id, service_id, "
-                "position_id, person_id, status, blocked, created_at, answered_at",
+                " created_at, scheduler_id) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+                " RETURNING id, service_id, position_id, person_id, status, blocked, created_at,"
+                " answered_at, decline_reason, scheduler_id",
                 (
                     draft.service_id,
                     draft.position_id,
@@ -509,6 +844,7 @@ class PostgresRecords:
                     records.RequestStatus.PENDING.value,
                     draft.blocked,
                     draft.created_at,
+                    draft.scheduler_id,
                 ),
             )
         )
@@ -516,8 +852,8 @@ class PostgresRecords:
     def request(self, request_id: int) -> records.Request | None:
         """Return the request with this id."""
         row = self._one(
-            "SELECT id, service_id, position_id, person_id, status, blocked, created_at, "
-            "answered_at FROM requests WHERE id = %s",
+            "SELECT id, service_id, position_id, person_id, status, blocked, created_at,"
+            " answered_at, decline_reason, scheduler_id FROM requests WHERE id = %s",
             (request_id,),
         )
         return None if row is None else _request(row)
@@ -525,8 +861,8 @@ class PostgresRecords:
     def requests(self, query: records.RequestQuery) -> list[records.Request]:
         """Return the requests the query matches, newest first."""
         rows = self._all(
-            "SELECT id, service_id, position_id, person_id, status, blocked, created_at, "
-            "answered_at FROM requests"
+            "SELECT id, service_id, position_id, person_id, status, blocked, created_at,"
+            " answered_at, decline_reason, scheduler_id FROM requests"
             " WHERE (%(person)s::bigint IS NULL OR person_id = %(person)s)"
             " AND (%(service)s::bigint IS NULL OR service_id = %(service)s)"
             " AND (%(status)s::text IS NULL OR status = %(status)s)"
@@ -540,10 +876,10 @@ class PostgresRecords:
         return [_request(r) for r in rows]
 
     def update_request(self, request: records.Request) -> None:
-        """Replace a request's status and answered_at."""
+        """Replace a request's status, answered_at and decline_reason."""
         self._conn.execute(
-            "UPDATE requests SET status = %s, answered_at = %s WHERE id = %s",
-            (request.status.value, request.answered_at, request.id),
+            "UPDATE requests SET status = %s, answered_at = %s, decline_reason = %s WHERE id = %s",
+            (request.status.value, request.answered_at, request.decline_reason, request.id),
         )
 
     def add_blockout(self, draft: records.BlockoutDraft) -> records.Blockout:
@@ -614,16 +950,16 @@ class PostgresRecords:
     def add_live(self, live: records.Live) -> None:
         """Keep a service's live state; the service must not be live already."""
         self._conn.execute(
-            "INSERT INTO live (service_id, controller_id, current_index, version, obs, ableton, "
-            "devices_updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO live (service_id, controller_id, current_index, version, obs, ableton,"
+            " devices_updated_at, item_started_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             _live_values(live),
         )
 
     def live(self, service_id: int) -> records.Live | None:
         """Return a service's live state; None when it is not live."""
         row = self._one(
-            "SELECT service_id, controller_id, current_index, version, obs, ableton, "
-            "devices_updated_at FROM live WHERE service_id = %s",
+            "SELECT service_id, controller_id, current_index, version, obs, ableton,"
+            " devices_updated_at, item_started_at FROM live WHERE service_id = %s",
             (service_id,),
         )
         return None if row is None else _live(row)
@@ -633,8 +969,8 @@ class PostgresRecords:
         return [
             _live(r)
             for r in self._all(
-                "SELECT service_id, controller_id, current_index, version, obs, ableton, "
-                "devices_updated_at FROM live ORDER BY service_id"
+                "SELECT service_id, controller_id, current_index, version, obs, ableton,"
+                " devices_updated_at, item_started_at FROM live ORDER BY service_id"
             )
         ]
 
@@ -642,13 +978,29 @@ class PostgresRecords:
         """Replace a live service's state."""
         self._conn.execute(
             "UPDATE live SET controller_id = %s, current_index = %s, version = %s, obs = %s,"
-            " ableton = %s, devices_updated_at = %s WHERE service_id = %s",
+            " ableton = %s, devices_updated_at = %s, item_started_at = %s WHERE service_id = %s",
             (*_live_values(live)[1:], live.service_id),
         )
 
     def delete_live(self, service_id: int) -> bool:
-        """End a service's live mode; False when it was not live."""
+        """End a service's live mode, forgetting its item starts; False when it was not live."""
+        self._conn.execute("DELETE FROM live_item_starts WHERE service_id = %s", (service_id,))
         return self._count("DELETE FROM live WHERE service_id = %s", (service_id,)) > 0
+
+    def add_item_start(self, service_id: int, start: records.ItemStart) -> None:
+        """Record that an item of a live service became the current one."""
+        self._conn.execute(
+            "INSERT INTO live_item_starts (service_id, item_id, started_at) VALUES (%s, %s, %s)",
+            (service_id, start.item_id, start.started_at),
+        )
+
+    def item_starts(self, service_id: int) -> list[records.ItemStart]:
+        """Return the item starts recorded in a service's live mode, in the order recorded."""
+        rows = self._all(
+            "SELECT item_id, started_at FROM live_item_starts WHERE service_id = %s ORDER BY id",
+            (service_id,),
+        )
+        return [records.ItemStart(r["item_id"], r["started_at"]) for r in rows]
 
 
 def _item_values(fields: records.ItemFields) -> tuple[object, ...]:
@@ -662,6 +1014,23 @@ def _item_values(fields: records.ItemFields) -> tuple[object, ...]:
         fields.lower_third,
         fields.off_stream,
         fields.notes,
+        fields.song_leader_id,
+        Jsonb([{"team_id": n.team_id, "note": n.note} for n in fields.team_notes]),
+    )
+
+
+def _arrangement_values(fields: records.ArrangementFields) -> tuple[object, ...]:
+    return (
+        fields.name,
+        fields.key,
+        fields.tempo_bpm,
+        fields.meter,
+        fields.length_seconds,
+        fields.sequence,
+        fields.chart,
+        list(fields.keys),
+        fields.notes,
+        fields.audio_url,
     )
 
 
@@ -674,6 +1043,7 @@ def _live_values(live: records.Live) -> tuple[object, ...]:
         live.obs.value,
         live.ableton.value,
         live.devices_updated_at,
+        live.item_started_at,
     )
 
 

@@ -51,6 +51,20 @@ def cancel_request(
     return scheduling.cancel(source, request_id, now())
 
 
+@router.post("/requests/{request_id}/withdraw")
+def withdraw_request(
+    request_id: models.PathId,
+    body: models.Withdrawal,
+    source: store.Injected,
+    now: clock.Injected,
+) -> models.Request:
+    """Decline an accepted request after all; 409 when it is not accepted.
+
+    The scheduler on record is told; with none on record, no one is, and the plan shows it.
+    """
+    return scheduling.withdraw(source, request_id, body, now())
+
+
 @router.get("/people/{person_id}/blockouts")
 def list_blockouts(person_id: models.PathId, source: store.Injected) -> list[models.Blockout]:
     """List a person's blockouts, by start date."""

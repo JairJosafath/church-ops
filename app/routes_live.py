@@ -15,10 +15,10 @@ def list_live(source: store.Injected) -> list[models.LiveState]:
 
 @router.post("/services/{service_id}/live", status_code=status.HTTP_201_CREATED)
 def start_live(
-    service_id: models.PathId, body: models.LiveStart, source: store.Injected
+    service_id: models.PathId, body: models.LiveStart, source: store.Injected, now: clock.Injected
 ) -> models.LiveState:
     """Start live mode at the first item; 409 when it is live already or has no items."""
-    return live.start(source, service_id, body)
+    return live.start(source, service_id, body, now())
 
 
 @router.get("/services/{service_id}/live")
@@ -29,10 +29,13 @@ def read_live(service_id: models.PathId, source: store.Injected) -> models.LiveS
 
 @router.post("/services/{service_id}/live/advance")
 def advance_live(
-    service_id: models.PathId, body: models.Advance, source: store.Injected
+    service_id: models.PathId, body: models.Advance, source: store.Injected, now: clock.Injected
 ) -> models.LiveState:
-    """Move the current item; only the controller may (409, naming who holds control)."""
-    return live.advance(source, service_id, body)
+    """Move the current item; only the controller may (409, naming who holds control).
+
+    The new current item is recorded as started now.
+    """
+    return live.advance(source, service_id, body, now())
 
 
 @router.post("/services/{service_id}/live/handover")

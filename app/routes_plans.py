@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Path, Query, Response, status
 
 from app import clock, models, plans, store
 
@@ -23,7 +23,7 @@ def list_services(
 
 @router.post("/services", status_code=status.HTTP_201_CREATED)
 def create_service(body: models.NewService, source: store.Injected) -> models.Service:
-    """Plan a service, with no items yet."""
+    """Plan a service: empty, or a copy of its service type's template."""
     return plans.create_service(source, body)
 
 
@@ -88,4 +88,23 @@ def delete_item(
 ) -> Response:
     """Take an item out of the order; the items after it move up."""
     plans.delete_item(source, service_id, item_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/services/{service_id}/times", status_code=status.HTTP_201_CREATED)
+def create_time(
+    service_id: models.PathId, body: models.NewPlanTime, source: store.Injected
+) -> models.PlanTime:
+    """Add a rehearsal to the service's plan."""
+    return plans.add_time(source, service_id, body)
+
+
+@router.delete("/services/{service_id}/times/{time_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_time(
+    service_id: models.PathId,
+    time_id: Annotated[int, Path(ge=0, le=models.MAX_ID)],
+    source: store.Injected,
+) -> Response:
+    """Take a rehearsal out of the plan; 409 for time 0, the service's own time."""
+    plans.delete_time(source, service_id, time_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

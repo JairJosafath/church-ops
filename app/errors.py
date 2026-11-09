@@ -27,6 +27,7 @@ class Kind(enum.StrEnum):
     SONG = "song"
     ARRANGEMENT = "arrangement"
     SERVICE = "service"
+    SERVICE_TYPE = "service type"
     ITEM = "item"
     REQUEST = "request"
     BLOCKOUT = "blockout"

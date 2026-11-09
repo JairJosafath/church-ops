@@ -97,8 +97,11 @@ def create_request(
 ) -> models.Request:
     """Ask a person to fill a position at a service, and queue the request's notification.
 
+    The scheduler, when the body names one, is kept on record and told if the person
+    later withdraws.
+
     Raises:
-        errors.NotFoundError: when there is no such service, position or person.
+        errors.NotFoundError: when there is no such service, position, person or scheduler.
         errors.ConflictError: when a pending or accepted request already asks the
             person for that position at that service.
     """
@@ -107,6 +110,8 @@ def create_request(
         if tx.position(body.position_id) is None:
             raise errors.not_found(errors.Kind.POSITION, body.position_id)
         views.found_person(tx, body.person_id)
+        if body.scheduler_id is not None:
+            views.found_person(tx, body.scheduler_id)
         for other in tx.requests(
             records.RequestQuery(person_id=body.person_id, service_id=service_id)
         ):
@@ -129,6 +134,7 @@ def create_request(
                 person_id=body.person_id,
                 blocked=blocked,
                 created_at=now,
+                scheduler_id=body.scheduler_id,
             )
         )
         text = f"You are asked to serve as {_what(tx, request)}. Please accept or decline."
@@ -141,6 +147,9 @@ def answer(
 ) -> models.Request:
     """Accept or decline a pending request; accepting queues the reminders still to come.
 
+    A decline keeps the reason the body gives, if any, for the scheduler to read; it
+    goes into no notification.
+
     Raises:
         errors.NotFoundError: when there is no such request.
         errors.ConflictError: when the request is no longer pending.
@@ -151,7 +160,9 @@ def answer(
             msg = f"request {request_id} is {request.status}, not pending; it cannot be answered"
             raise errors.ConflictError(msg)
         status = records.RequestStatus.ACCEPTED if body.accept else records.RequestStatus.DECLINED
-        answered = dataclasses.replace(request, status=status, answered_at=now)
+        answered = dataclasses.replace(
+            request, status=status, answered_at=now, decline_reason=body.reason or ""
+        )
         tx.update_request(answered)
         if body.accept:
             _queue_reminders(tx, answered, now)
@@ -176,6 +187,50 @@ def cancel(source: store.Store, request_id: int, now: datetime) -> models.Reques
         text = f"Cancelled: you are no longer asked to serve as {_what(tx, cancelled)}."
         _notify(tx, cancelled, records.NotificationKind.CANCELLATION, text, now)
         return views.request(tx, cancelled)
+
+
+def withdraw(
+    source: store.Store, request_id: int, body: models.Withdrawal, now: datetime
+) -> models.Request:
+    """Decline an accepted request after all, and tell the scheduler on record.
+
+    The request becomes declined, answered now, with the reason the body gives; its
+    reminders not yet sent are dropped. A change notification, due now, goes to the
+    scheduler who sent the request; with no scheduler on record none is queued, and
+    the plan shows the decline. The reason goes into no notification.
+
+    Raises:
+        errors.NotFoundError: when there is no such request.
+        errors.ConflictError: when the request is not accepted.
+    """
+    with source.write() as tx:
+        request = _found_request(tx, request_id)
+        if request.status is not records.RequestStatus.ACCEPTED:
+            msg = (
+                f"request {request_id} is {request.status}; only an accepted request can be"
+                " withdrawn (answer a pending one instead)"
+            )
+            raise errors.ConflictError(msg)
+        withdrawn = dataclasses.replace(
+            request,
+            status=records.RequestStatus.DECLINED,
+            answered_at=now,
+            decline_reason=body.reason,
+        )
+        tx.update_request(withdrawn)
+        tx.delete_unsent(request_id, records.NotificationKind.REMINDER)
+        if withdrawn.scheduler_id is not None:
+            person = views.found_person(tx, withdrawn.person_id)
+            tx.add_notification(
+                records.NotificationDraft(
+                    person_id=withdrawn.scheduler_id,
+                    request_id=withdrawn.id,
+                    kind=records.NotificationKind.CHANGE,
+                    text=f"Withdrawn: {person.name} can no longer serve as {_what(tx, withdrawn)}.",
+                    due_at=now,
+                )
+            )
+        return views.request(tx, withdrawn)
 
 
 def service_moved(tx: store.Records, service: records.Service, now: datetime) -> None:

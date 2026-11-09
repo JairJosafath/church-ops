@@ -60,8 +60,30 @@ class Records(Protocol):
         """Return the positions of every team, by id."""
         ...
 
-    def add_song(self, title: str, authors: str, ccli: str | None) -> records.Song:
+    def add_member(self, membership: records.Membership) -> None:
+        """Record that a person can fill a position; they must not be a member already."""
+        ...
+
+    def delete_member(self, membership: records.Membership) -> bool:
+        """Forget that a person can fill a position; False when they could not."""
+        ...
+
+    def members(self, position_id: int | None) -> list[records.Membership]:
+        """Return who can fill one position, or every position when None, by person id."""
+        ...
+
+    def add_song(
+        self, title: str, authors: str, ccli: str | None, tags: tuple[str, ...]
+    ) -> records.Song:
         """Keep a new song."""
+        ...
+
+    def update_song(self, song: records.Song) -> None:
+        """Replace a song's title, authors, ccli and tags."""
+        ...
+
+    def song_uses(self, query: records.SongUseQuery) -> list[records.SongUse]:
+        """Return the song items the query matches, by their service's start, then item id."""
         ...
 
     def song(self, song_id: int) -> records.Song | None:
@@ -82,8 +104,36 @@ class Records(Protocol):
         """Return the arrangement with this id."""
         ...
 
+    def update_arrangement(self, arrangement: records.Arrangement) -> None:
+        """Replace an arrangement's fields."""
+        ...
+
     def arrangements(self, song_id: int | None) -> list[records.Arrangement]:
         """Return the arrangements of one song, or of every song when None, by id."""
+        ...
+
+    def add_service_type(self, fields: records.ServiceTypeFields) -> records.ServiceType:
+        """Keep a new service type, with an empty template."""
+        ...
+
+    def service_type(self, service_type_id: int) -> records.ServiceType | None:
+        """Return the service type with this id."""
+        ...
+
+    def service_types(self) -> list[records.ServiceType]:
+        """Return every service type, by name, then id."""
+        ...
+
+    def update_service_type(self, service_type: records.ServiceType) -> None:
+        """Replace a service type's fields."""
+        ...
+
+    def template(self, service_type_id: int) -> records.Template:
+        """Return a service type's template; empty when none was set."""
+        ...
+
+    def replace_template(self, service_type_id: int, template: records.Template) -> None:
+        """Replace a service type's template with this one."""
         ...
 
     def add_service(self, fields: records.ServiceFields) -> records.Service:
@@ -100,6 +150,26 @@ class Records(Protocol):
 
     def update_service(self, service: records.Service) -> None:
         """Replace a service's fields."""
+        ...
+
+    def needed(self, service_id: int) -> list[records.Need]:
+        """Return the positions a service needs people in, by position id."""
+        ...
+
+    def set_need(self, service_id: int, need: records.Need) -> None:
+        """Set how many people a service needs in a position; a count of 0 forgets the need."""
+        ...
+
+    def add_time(self, service_id: int, fields: records.PlanTimeFields) -> records.PlanTime:
+        """Keep a new time of a service."""
+        ...
+
+    def times(self, service_id: int) -> list[records.PlanTime]:
+        """Return the times kept for a service, by start, then id."""
+        ...
+
+    def delete_time(self, service_id: int, time_id: int) -> bool:
+        """Forget a time of a service; False when the service has none with this id."""
         ...
 
     def add_item(self, service_id: int, position: int, fields: records.ItemFields) -> records.Item:
@@ -139,7 +209,7 @@ class Records(Protocol):
         ...
 
     def update_request(self, request: records.Request) -> None:
-        """Replace a request's status and answered_at."""
+        """Replace a request's status, answered_at and decline_reason."""
         ...
 
     def add_blockout(self, draft: records.BlockoutDraft) -> records.Blockout:
@@ -191,7 +261,15 @@ class Records(Protocol):
         ...
 
     def delete_live(self, service_id: int) -> bool:
-        """End a service's live mode; False when it was not live."""
+        """End a service's live mode, forgetting its item starts; False when it was not live."""
+        ...
+
+    def add_item_start(self, service_id: int, start: records.ItemStart) -> None:
+        """Record that an item of a live service became the current one."""
+        ...
+
+    def item_starts(self, service_id: int) -> list[records.ItemStart]:
+        """Return the item starts recorded in a service's live mode, in the order recorded."""
         ...
 
 

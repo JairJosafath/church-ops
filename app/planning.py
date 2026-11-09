@@ -38,6 +38,21 @@ def ends_at(starts_at: datetime, total_seconds: int) -> datetime:
     return starts_at.astimezone(UTC) + timedelta(seconds=total_seconds)
 
 
+# How long a rehearsal from a service type's offset takes, unless the service starts first.
+REHEARSAL_LENGTH = timedelta(hours=2)
+
+
+def rehearsal(starts_at: datetime, offset_minutes: int) -> tuple[datetime, datetime]:
+    """Return when the rehearsal a service type's offset gives starts and ends, in UTC.
+
+    It starts offset_minutes before the service and ends when the service starts or
+    after REHEARSAL_LENGTH, whichever is first: a warm-up that morning runs up to the
+    service, a rehearsal on Thursday evening takes two hours.
+    """
+    start = starts_at.astimezone(UTC) - timedelta(minutes=offset_minutes)
+    return start, min(start + REHEARSAL_LENGTH, starts_at.astimezone(UTC))
+
+
 def default_off_stream(kind: records.ItemKind) -> bool:
     """Return whether a new item of this kind is off stream when the planner does not say.
 
@@ -50,8 +65,8 @@ def default_off_stream(kind: records.ItemKind) -> bool:
 def check_item(fields: records.ItemFields) -> None:
     """Check that an item's fields fit its kind.
 
-    A song names an arrangement; no other kind does, nor sets a key of its own; a
-    header groups items and takes no time.
+    A song names an arrangement; no other kind does, nor sets a key of its own or a
+    song leader; a header groups items and takes no time.
 
     Raises:
         errors.InvalidError: saying which rule the fields break.
@@ -66,9 +81,25 @@ def check_item(fields: records.ItemFields) -> None:
     if not is_song and fields.key is not None:
         msg = f"a {fields.kind} item has no key; leave key out"
         raise errors.InvalidError(msg)
+    if not is_song and fields.song_leader_id is not None:
+        msg = f"a {fields.kind} item has no song leader; leave song_leader_id out"
+        raise errors.InvalidError(msg)
     if fields.kind is records.ItemKind.HEADER and fields.length_seconds:
         msg = "a header takes no time; its length_seconds must be 0"
         raise errors.InvalidError(msg)
+
+
+def with_team_notes(
+    notes: Sequence[records.TeamNote], changes: Sequence[records.TeamNote]
+) -> tuple[records.TeamNote, ...]:
+    """Return the notes with the changes made: each change sets its team's note.
+
+    A change with an empty note removes the team's note; the teams the changes leave
+    out keep theirs. The result keeps the notes' order, with new teams after them.
+    """
+    changed = {c.team_id: c for c in changes}
+    kept = [changed.pop(n.team_id, n) for n in notes]
+    return tuple(n for n in (*kept, *changed.values()) if n.note)
 
 
 def renumbered(items: Sequence[records.Item]) -> list[records.Item]:

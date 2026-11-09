@@ -82,6 +82,10 @@ def test_live_mode_starts_at_the_first_item_at_version_1(api: TestClient) -> Non
         "current": service.items[0],
         "next": service.items[1],
         "devices": {"obs": "unknown", "ableton": "unknown", "updated_at": None},
+        "item_started_at": "2026-11-02T13:00:00+01:00",
+        "recorded": [
+            {"item_id": service.items[0]["id"], "started_at": "2026-11-02T13:00:00+01:00"}
+        ],
     }
     assert api.get(f"/services/{service.id}/live").json() == state
     assert api.get("/live").json() == [state]
@@ -253,3 +257,59 @@ def test_the_live_state_follows_the_plan(api: TestClient) -> None:
     assert state["current"]["arrangement"]["tempo_bpm"] == 72
     assert state["next"]["off_stream"] is True
     assert state["version"] == 1
+
+
+def test_each_advance_records_when_the_new_item_started(
+    api: TestClient, fake_clock: FakeClock
+) -> None:
+    service = make_service(api)
+    go_live(api, service)
+    fake_clock.advance(timedelta(minutes=2, seconds=5))
+    state = advance(api, service, service.producer, 1).json()
+    assert state["item_started_at"] == "2026-11-02T13:02:05+01:00"
+    fake_clock.advance(timedelta(minutes=4))
+    advance(api, service, service.producer, 2)
+    # Going back is recorded too: the item became current again.
+    fake_clock.advance(timedelta(seconds=30))
+    state = advance(api, service, service.producer, 1).json()
+    ids = [i["id"] for i in service.items]
+    assert state["item_started_at"] == "2026-11-02T13:06:35+01:00"
+    assert state["recorded"] == [
+        {"item_id": ids[0], "started_at": "2026-11-02T13:00:00+01:00"},
+        {"item_id": ids[1], "started_at": "2026-11-02T13:02:05+01:00"},
+        {"item_id": ids[2], "started_at": "2026-11-02T13:06:05+01:00"},
+        {"item_id": ids[1], "started_at": "2026-11-02T13:06:35+01:00"},
+    ]
+    assert api.get("/live").json()[0]["recorded"] == state["recorded"]
+
+
+def test_staying_on_the_item_handing_over_or_a_device_report_records_nothing(
+    api: TestClient, fake_clock: FakeClock
+) -> None:
+    service = make_service(api)
+    started = go_live(api, service)
+    fake_clock.advance(timedelta(minutes=1))
+    advance(api, service, service.producer, 0)
+    api.post(
+        f"/services/{service.id}/live/handover",
+        json={"from_person_id": service.producer["id"], "to_person_id": service.leader["id"]},
+    )
+    state = api.put(
+        f"/services/{service.id}/live/devices", json={"obs": "ok", "ableton": "ok"}
+    ).json()
+    assert (state["item_started_at"], state["recorded"]) == (
+        started["item_started_at"],
+        started["recorded"],
+    )
+
+
+def test_live_mode_started_again_records_afresh(api: TestClient, fake_clock: FakeClock) -> None:
+    service = make_service(api)
+    go_live(api, service)
+    advance(api, service, service.producer, 1)
+    api.delete(f"/services/{service.id}/live")
+    fake_clock.advance(timedelta(minutes=10))
+    state = go_live(api, service)
+    assert state["recorded"] == [
+        {"item_id": service.items[0]["id"], "started_at": "2026-11-02T13:10:00+01:00"}
+    ]

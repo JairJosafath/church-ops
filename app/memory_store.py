@@ -22,14 +22,21 @@ class _Tables:
     people: dict[int, records.Person] = dataclasses.field(default_factory=dict)
     teams: dict[int, records.Team] = dataclasses.field(default_factory=dict)
     positions: dict[int, records.Position] = dataclasses.field(default_factory=dict)
+    members: set[records.Membership] = dataclasses.field(default_factory=set)
     songs: dict[int, records.Song] = dataclasses.field(default_factory=dict)
     arrangements: dict[int, records.Arrangement] = dataclasses.field(default_factory=dict)
     services: dict[int, records.Service] = dataclasses.field(default_factory=dict)
+    service_types: dict[int, records.ServiceType] = dataclasses.field(default_factory=dict)
+    templates: dict[int, records.Template] = dataclasses.field(default_factory=dict)
+    times: dict[int, records.PlanTime] = dataclasses.field(default_factory=dict)
+    # The needs of each service, by service id, then position id.
+    needs: dict[int, dict[int, records.Need]] = dataclasses.field(default_factory=dict)
     items: dict[int, records.Item] = dataclasses.field(default_factory=dict)
     requests: dict[int, records.Request] = dataclasses.field(default_factory=dict)
     blockouts: dict[int, records.Blockout] = dataclasses.field(default_factory=dict)
     notifications: dict[int, records.Notification] = dataclasses.field(default_factory=dict)
     lives: dict[int, records.Live] = dataclasses.field(default_factory=dict)
+    item_starts: dict[int, tuple[records.ItemStart, ...]] = dataclasses.field(default_factory=dict)
 
     def copy(self) -> "_Tables":
         """Return a copy whose tables can change without changing these; records are shared."""
@@ -38,14 +45,20 @@ class _Tables:
             people=dict(self.people),
             teams=dict(self.teams),
             positions=dict(self.positions),
+            members=set(self.members),
             songs=dict(self.songs),
             arrangements=dict(self.arrangements),
             services=dict(self.services),
+            service_types=dict(self.service_types),
+            templates=dict(self.templates),
+            times=dict(self.times),
+            needs={service_id: dict(needs) for service_id, needs in self.needs.items()},
             items=dict(self.items),
             requests=dict(self.requests),
             blockouts=dict(self.blockouts),
             notifications=dict(self.notifications),
             lives=dict(self.lives),
+            item_starts=dict(self.item_starts),
         )
 
     def new_id(self) -> int:
@@ -103,11 +116,54 @@ class MemoryRecords:
         """Return the positions of every team, by id."""
         return sorted(self._tables.positions.values(), key=lambda p: p.id)
 
-    def add_song(self, title: str, authors: str, ccli: str | None) -> records.Song:
+    def add_member(self, membership: records.Membership) -> None:
+        """Record that a person can fill a position; they must not be a member already."""
+        self._tables.members.add(membership)
+
+    def delete_member(self, membership: records.Membership) -> bool:
+        """Forget that a person can fill a position; False when they could not."""
+        if membership not in self._tables.members:
+            return False
+        self._tables.members.remove(membership)
+        return True
+
+    def members(self, position_id: int | None) -> list[records.Membership]:
+        """Return who can fill one position, or every position when None, by person id."""
+        return sorted(
+            (m for m in self._tables.members if position_id in {None, m.position_id}),
+            key=lambda m: (m.person_id, m.position_id),
+        )
+
+    def add_song(
+        self, title: str, authors: str, ccli: str | None, tags: tuple[str, ...]
+    ) -> records.Song:
         """Keep a new song."""
-        song = records.Song(id=self._tables.new_id(), title=title, authors=authors, ccli=ccli)
+        song = records.Song(
+            id=self._tables.new_id(), title=title, authors=authors, ccli=ccli, tags=tags
+        )
         self._tables.songs[song.id] = song
         return song
+
+    def update_song(self, song: records.Song) -> None:
+        """Replace a song's title, authors, ccli and tags."""
+        self._tables.songs[song.id] = song
+
+    def song_uses(self, query: records.SongUseQuery) -> list[records.SongUse]:
+        """Return the song items the query matches, by their service's start, then item id."""
+        uses: list[records.SongUse] = []
+        for item in self._tables.items.values():
+            arrangement_id = item.fields.arrangement_id
+            if item.fields.kind is not records.ItemKind.SONG or arrangement_id is None:
+                continue
+            song_id = self._tables.arrangements[arrangement_id].song_id
+            starts_at = self._tables.services[item.service_id].fields.starts_at
+            if (
+                query.song_id in {None, song_id}
+                and (query.starting is None or starts_at >= query.starting)
+                and (query.before is None or starts_at < query.before)
+            ):
+                uses.append(records.SongUse(song_id, item.id, item.service_id, starts_at))
+        return sorted(uses, key=lambda u: (u.starts_at, u.item_id))
 
     def song(self, song_id: int) -> records.Song | None:
         """Return the song with this id."""
@@ -129,12 +185,45 @@ class MemoryRecords:
         """Return the arrangement with this id."""
         return self._tables.arrangements.get(arrangement_id)
 
+    def update_arrangement(self, arrangement: records.Arrangement) -> None:
+        """Replace an arrangement's fields."""
+        self._tables.arrangements[arrangement.id] = arrangement
+
     def arrangements(self, song_id: int | None) -> list[records.Arrangement]:
         """Return the arrangements of one song, or of every song when None, by id."""
         return sorted(
             (a for a in self._tables.arrangements.values() if song_id in {None, a.song_id}),
             key=lambda a: a.id,
         )
+
+    def add_service_type(self, fields: records.ServiceTypeFields) -> records.ServiceType:
+        """Keep a new service type, with an empty template."""
+        service_type = records.ServiceType(id=self._tables.new_id(), fields=fields)
+        self._tables.service_types[service_type.id] = service_type
+        return service_type
+
+    def service_type(self, service_type_id: int) -> records.ServiceType | None:
+        """Return the service type with this id."""
+        return self._tables.service_types.get(service_type_id)
+
+    def service_types(self) -> list[records.ServiceType]:
+        """Return every service type, by name, then id."""
+        return sorted(
+            self._tables.service_types.values(), key=lambda t: (t.fields.name.casefold(), t.id)
+        )
+
+    def update_service_type(self, service_type: records.ServiceType) -> None:
+        """Replace a service type's fields."""
+        self._tables.service_types[service_type.id] = service_type
+
+    def template(self, service_type_id: int) -> records.Template:
+        """Return a service type's template; empty when none was set."""
+        return self._tables.templates.get(service_type_id, records.Template(items=(), needed=()))
+
+    def replace_template(self, service_type_id: int, template: records.Template) -> None:
+        """Replace a service type's template with this one."""
+        needed = tuple(sorted((n for n in template.needed if n.count), key=lambda n: n.position_id))
+        self._tables.templates[service_type_id] = records.Template(template.items, needed)
 
     def add_service(self, fields: records.ServiceFields) -> records.Service:
         """Keep a new service, with no items."""
@@ -160,6 +249,40 @@ class MemoryRecords:
     def update_service(self, service: records.Service) -> None:
         """Replace a service's fields."""
         self._tables.services[service.id] = service
+
+    def needed(self, service_id: int) -> list[records.Need]:
+        """Return the positions a service needs people in, by position id."""
+        needs = self._tables.needs.get(service_id, {})
+        return [needs[position_id] for position_id in sorted(needs)]
+
+    def set_need(self, service_id: int, need: records.Need) -> None:
+        """Set how many people a service needs in a position; a count of 0 forgets the need."""
+        needs = self._tables.needs.setdefault(service_id, {})
+        if need.count:
+            needs[need.position_id] = need
+        else:
+            needs.pop(need.position_id, None)
+
+    def add_time(self, service_id: int, fields: records.PlanTimeFields) -> records.PlanTime:
+        """Keep a new time of a service."""
+        kept = records.PlanTime(id=self._tables.new_id(), service_id=service_id, fields=fields)
+        self._tables.times[kept.id] = kept
+        return kept
+
+    def times(self, service_id: int) -> list[records.PlanTime]:
+        """Return the times kept for a service, by start, then id."""
+        return sorted(
+            (t for t in self._tables.times.values() if t.service_id == service_id),
+            key=lambda t: (t.fields.starts_at, t.id),
+        )
+
+    def delete_time(self, service_id: int, time_id: int) -> bool:
+        """Forget a time of a service; False when the service has none with this id."""
+        kept = self._tables.times.get(time_id)
+        if kept is None or kept.service_id != service_id:
+            return False
+        del self._tables.times[time_id]
+        return True
 
     def add_item(self, service_id: int, position: int, fields: records.ItemFields) -> records.Item:
         """Keep a new item of a service at a position."""
@@ -212,6 +335,8 @@ class MemoryRecords:
             blocked=draft.blocked,
             created_at=draft.created_at,
             answered_at=None,
+            decline_reason="",
+            scheduler_id=draft.scheduler_id,
         )
         self._tables.requests[request.id] = request
         return request
@@ -229,7 +354,7 @@ class MemoryRecords:
         )
 
     def update_request(self, request: records.Request) -> None:
-        """Replace a request's status and answered_at."""
+        """Replace a request's status, answered_at and decline_reason."""
         self._tables.requests[request.id] = request
 
     def add_blockout(self, draft: records.BlockoutDraft) -> records.Blockout:
@@ -319,8 +444,20 @@ class MemoryRecords:
         self._tables.lives[live.service_id] = live
 
     def delete_live(self, service_id: int) -> bool:
-        """End a service's live mode; False when it was not live."""
+        """End a service's live mode, forgetting its item starts; False when it was not live."""
+        self._tables.item_starts.pop(service_id, None)
         return self._tables.lives.pop(service_id, None) is not None
+
+    def add_item_start(self, service_id: int, start: records.ItemStart) -> None:
+        """Record that an item of a live service became the current one."""
+        self._tables.item_starts[service_id] = (
+            *self._tables.item_starts.get(service_id, ()),
+            start,
+        )
+
+    def item_starts(self, service_id: int) -> list[records.ItemStart]:
+        """Return the item starts recorded in a service's live mode, in the order recorded."""
+        return list(self._tables.item_starts.get(service_id, ()))
 
 
 def _matches(query: records.RequestQuery, request: records.Request) -> bool:

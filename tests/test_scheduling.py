@@ -66,6 +66,7 @@ def test_a_request_is_201_pending_and_names_what_it_asks(api: TestClient) -> Non
         "created_at": "2026-11-02T13:00:00+01:00",
         "answered_at": None,
         "also_asked": [],
+        "decline_reason": "",
     }
     assert api.get(f"/services/{plan.service['id']}").json()["requests"] == [request]
 
@@ -481,3 +482,103 @@ def test_the_blockouts_of_a_missing_person_are_404(api: TestClient) -> None:
     assert api.get("/people/999/blockouts").status_code == 404
     body = {"starts_on": "2026-11-15", "ends_on": "2026-11-15"}
     assert api.post("/people/999/blockouts", json=body).status_code == 404
+
+
+def test_a_decline_may_give_a_reason(api: TestClient) -> None:
+    plan = make_plan(api)
+    request = ask(api, plan)
+    body = {"accept": False, "reason": "  Visiting my parents  "}
+    response = api.post(f"/requests/{request['id']}/answer", json=body)
+    assert response.status_code == 200
+    assert (response.json()["status"], response.json()["decline_reason"]) == (
+        "declined",
+        "Visiting my parents",
+    )
+    [listed] = api.get(f"/services/{plan.service['id']}").json()["requests"]
+    assert listed["decline_reason"] == "Visiting my parents"
+    assert "parents" not in " ".join(n["text"] for n in due(api))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [{"accept": True, "reason": "Happy to"}, {"accept": False, "reason": "x" * 501}],
+    ids=["with-accept", "too-long"],
+)
+def test_a_reason_with_an_accept_or_too_long_is_422(api: TestClient, body: Json) -> None:
+    plan = make_plan(api)
+    request = ask(api, plan)
+    assert api.post(f"/requests/{request['id']}/answer", json=body).status_code == 422
+
+
+def ask_for(api: TestClient, plan: Plan, scheduler: Json | None) -> Json:
+    body = {"position_id": plan.position["id"], "person_id": plan.person["id"]}
+    if scheduler is not None:
+        body["scheduler_id"] = scheduler["id"]
+    response = api.post(f"/services/{plan.service['id']}/requests", json=body)
+    assert response.status_code == 201, response.json()
+    request: Json = response.json()
+    return request
+
+
+def test_withdrawing_after_accepting_declines_and_tells_the_scheduler(
+    api: TestClient, fake_clock: FakeClock
+) -> None:
+    plan = make_plan(api)
+    scheduler = api.post("/people", json={"name": "Wim"}).json()
+    request = ask_for(api, plan, scheduler)
+    api.post(f"/requests/{request['id']}/answer", json={"accept": True})
+    fake_clock.advance(timedelta(hours=1))
+    response = api.post(f"/requests/{request['id']}/withdraw", json={"reason": "Ill"})
+    assert response.status_code == 200
+    withdrawn = response.json()
+    assert (withdrawn["status"], withdrawn["decline_reason"], withdrawn["answered_at"]) == (
+        "declined",
+        "Ill",
+        "2026-11-02T14:00:00+01:00",
+    )
+    fake_clock.now = datetime(2026, 11, 15, tzinfo=UTC)
+    notifications = due(api)
+    assert [(n["kind"], n["person"]["name"]) for n in notifications] == [
+        ("request", "Anna"),
+        ("change", "Wim"),
+    ]
+    assert notifications[1]["text"] == (
+        "Withdrawn: Anna can no longer serve as Drums (Worship band)"
+        " at Sunday morning on 2026-11-15 10:00."
+    )
+
+
+def test_withdrawing_without_a_scheduler_on_record_tells_no_one(
+    api: TestClient, fake_clock: FakeClock
+) -> None:
+    plan = make_plan(api)
+    request = ask_for(api, plan, None)
+    api.post(f"/requests/{request['id']}/answer", json={"accept": True})
+    response = api.post(f"/requests/{request['id']}/withdraw", json={})
+    assert (response.status_code, response.json()["decline_reason"]) == (200, "")
+    fake_clock.now = datetime(2026, 11, 15, tzinfo=UTC)
+    assert [n["kind"] for n in due(api)] == ["request"]
+    [listed] = api.get(f"/services/{plan.service['id']}").json()["requests"]
+    assert listed["status"] == "declined"
+
+
+@pytest.mark.parametrize("before", ["pending", "decline", "cancel"], ids=str)
+def test_withdrawing_a_request_that_is_not_accepted_is_409(api: TestClient, before: str) -> None:
+    plan = make_plan(api)
+    request = ask(api, plan)
+    if before == "cancel":
+        api.post(f"/requests/{request['id']}/cancel")
+    elif before == "decline":
+        api.post(f"/requests/{request['id']}/answer", json={"accept": False})
+    response = api.post(f"/requests/{request['id']}/withdraw", json={})
+    assert response.status_code == 409
+    assert "only an accepted request can be withdrawn" in response.json()["detail"]
+    assert api.post("/requests/999/withdraw", json={}).status_code == 404
+
+
+def test_a_request_naming_a_missing_scheduler_is_404(api: TestClient) -> None:
+    plan = make_plan(api)
+    body = {"position_id": plan.position["id"], "person_id": plan.person["id"], "scheduler_id": 999}
+    response = api.post(f"/services/{plan.service['id']}/requests", json=body)
+    assert response.status_code == 404
+    assert response.json() == {"detail": "person 999 not found"}
